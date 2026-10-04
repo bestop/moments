@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node scripts/apply-migrations.mjs && nuxt build",
+    "build": "node scripts/apply-migrations.mjs --optional && nuxt build",
     "dev": "nuxt dev --host 0.0.0.0",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
@@ -20,7 +20,7 @@
     "@radix-icons/vue": "^1.0.0",
     "@tsndr/cloudflare-worker-jwt": "^2.5.4",
     "@types/node": "^20.12.8",
-    "@vercel/blob": "^0.27.0",
+    "@vercel/blob": "^2.8.0",
     "@vueuse/core": "^10.9.0",
     "aplayer": "^1.10.1",
     "axios": "^1.7.2",

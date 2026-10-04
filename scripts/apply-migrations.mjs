@@ -32,11 +32,19 @@ function loadDotEnv() {
   }
 }
 
+const optional = process.argv.includes('--optional')
+
 async function main() {
   loadDotEnv()
 
   const url = process.env.DATABASE_URL ?? process.env.POSTGRES_URL
   if (!url) {
+    if (optional) {
+      // 构建期集成（package.json build）：本地开发/构建可能没有数据库，
+      // 跳过即可；Vercel 上 DATABASE_URL 恒由 Neon 集成注入，不受影响。
+      console.warn('警告：未设置 DATABASE_URL，跳过数据库迁移（本地开发模式）')
+      process.exit(0)
+    }
     console.error('错误：未设置 DATABASE_URL（Neon 连接串；本地开发可为 postgres://localhost:5432/moments）')
     process.exit(1)
   }
@@ -98,6 +106,12 @@ async function main() {
 }
 
 main().catch((e) => {
+  if (optional) {
+    // 构建期容错：数据库不可达（网络抖动/本地无库）不阻断部署，
+    // 迁移幂等，下次部署自动重试；显式 `pnpm db:migrate` 仍硬失败。
+    console.warn('警告：数据库迁移未完成（--optional 模式，构建继续）：', e?.message ?? e)
+    process.exit(0)
+  }
   console.error(e)
   process.exit(1)
 })
