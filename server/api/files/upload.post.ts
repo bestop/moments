@@ -11,6 +11,7 @@
 // the blob's CDN URL.
 import short from 'short-uuid'
 import { put } from '@vercel/blob'
+import { getBlobAccess, setBlobAccess, type BlobAccess } from '~/lib/blob'
 
 type FileInfo = { name: string; filename: string; data: Uint8Array; type: string }
 
@@ -57,22 +58,42 @@ export default defineEventHandler(async (event) => {
   const filename = short.generate()
   const key = `${filename}.${filetype}`
 
+  // Store 可能是 public 或 private 访问级别（store 级设置，SDK 无法预查）。
+  // 按记忆的模式写入；store 拒绝该级别时翻转模式重试一次，并把结果
+  // 持久化到 SystemConfig 供服务端路由与后续部署复用。
+  const putOptions = (access: BlobAccess) => ({
+    access,
+    contentType: file.type || 'application/octet-stream',
+    // key 是 short-uuid，天然不冲突；关掉随机后缀保证 pathname 与
+    // DB 里存的 /upload/<key> 一一对应（重复上传同 key 即覆盖）。
+    addRandomSuffix: false,
+  })
+
+  const fail = (reason: string) => ({
+    success: false,
+    message: `上传文件失败: ${reason}`,
+    filename: '',
+  })
+
+  let access = await getBlobAccess()
   try {
-    await put(key, file.data as unknown as BodyInit, {
-      access: 'public',
-      contentType: file.type || 'application/octet-stream',
-      // key 是 short-uuid，天然不冲突；关掉随机后缀保证 pathname 与
-      // DB 里存的 /upload/<key> 一一对应（重复上传同 key 即覆盖）。
-      addRandomSuffix: false,
-    })
+    await put(key, file.data as unknown as BodyInit, putOptions(access))
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e)
     console.log('Vercel Blob put error:', reason)
-    return {
-      success: false,
-      message: `上传文件失败: ${reason}`,
-      filename: '',
+    // "Cannot use public access on a private store"（及对称情形）→ 翻转重试
+    const wantsPrivate = access === 'public' && /private store/i.test(reason)
+    const wantsPublic = access === 'private' && /public store/i.test(reason)
+    if (!wantsPrivate && !wantsPublic) return fail(reason)
+    access = wantsPrivate ? 'private' : 'public'
+    try {
+      await put(key, file.data as unknown as BodyInit, putOptions(access))
+    } catch (retryError) {
+      const retryReason = retryError instanceof Error ? retryError.message : String(retryError)
+      console.log('Vercel Blob put (retry) error:', retryReason)
+      return fail(retryReason)
     }
+    await setBlobAccess(access) // best-effort，内部吞错
   }
 
   return {
