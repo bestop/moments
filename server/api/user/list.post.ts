@@ -1,4 +1,5 @@
-import { and, like, ne } from 'drizzle-orm'
+// PostgreSQL: ilike keeps the case-insensitive search feel SQLite LIKE had.
+import { and, ilike, ne } from 'drizzle-orm'
 import { useDb } from '~/lib/db'
 import { users } from '~/lib/db/schema'
 
@@ -16,8 +17,8 @@ export default defineEventHandler(async (event) => {
   if (withMe === 0) {
     const ctxUserId = event.context.userId
     const cond = ctxUserId
-      ? and(like(users.nickname, pattern), ne(users.id, ctxUserId))
-      : like(users.nickname, pattern)
+      ? and(ilike(users.nickname, pattern), ne(users.id, ctxUserId))
+      : ilike(users.nickname, pattern)
     rows = await db
       .select({ id: users.id, nickname: users.nickname, avatarUrl: users.avatarUrl })
       .from(users)
@@ -26,7 +27,7 @@ export default defineEventHandler(async (event) => {
     rows = await db
       .select({ id: users.id, nickname: users.nickname, avatarUrl: users.avatarUrl })
       .from(users)
-      .where(like(users.nickname, pattern))
+      .where(ilike(users.nickname, pattern))
   }
 
   return {

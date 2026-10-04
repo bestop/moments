@@ -4,14 +4,21 @@
 //     everything-else second, JS slice into pages)
 //   - Per-memo {user, comments:[first 6], _count:{comments}} shape matches
 //     the legacy include payload the frontend consumes
+// PostgreSQL (Neon) notes:
+//   - ilike() instead of like(): SQLite LIKE was case-insensitive for ASCII,
+//     PG LIKE is case-sensitive — ILIKE preserves the old search feel.
+//   - the comment window query runs via db.execute(): identifiers are
+//     rendered from the drizzle table objects ("Comment" is a quoted,
+//     case-sensitive table name in PG — unquoted it would fold to lowercase
+//     and 404).
 import {
   and,
   asc,
   desc,
   eq,
+  ilike,
   inArray,
   isNull,
-  like,
   not,
   or,
   sql,
@@ -55,12 +62,12 @@ export default defineEventHandler(async (event) => {
   const availableFilter = or(
     isNull(memos.availableForProple),
     eq(memos.availableForProple, ''),
-    like(memos.availableForProple, `%#${ctxUserId}$%`),
+    ilike(memos.availableForProple, `%#${ctxUserId}$%`),
   )
 
   // Content contains filter (Prisma's `contains: ''` becomes `LIKE '%%'`,
   // which matches every non-null content row — preserve that semantic).
-  const contentFilter = like(memos.content, `%${needle}%`)
+  const contentFilter = ilike(memos.content, `%${needle}%`)
 
   // +1 trick：多取 1 条来判断 hasNext，省掉单独的 COUNT(*) 查询
   const fetchLimit = size + 1
@@ -86,7 +93,7 @@ export default defineEventHandler(async (event) => {
       .from(memos)
       .where(and(contentFilter, availableFilter))
       .orderBy(
-        sql`(CASE WHEN ${memos.userId} = 1 AND ${memos.pinned} = 1 THEN 0 ELSE 1 END) ASC`,
+        sql`(CASE WHEN ${memos.userId} = 1 AND ${memos.pinned} = true THEN 0 ELSE 1 END) ASC`,
         desc(memos.createdAt),
       )
       .limit(fetchLimit)
@@ -129,18 +136,21 @@ export default defineEventHandler(async (event) => {
   const commentCountByMemo = new Map<number, number>()
   const commentsByMemo = new Map<number, typeof comments.$inferSelect[]>()
   if (memoIds.length > 0) {
-    // 取出每条评论 + 其在所属 memo 内的排序号 + 该 memo 评论总数
-    const rows = await db.all<any>(sql`
+    // 取出每条评论 + 其在所属 memo 内的排序号 + 该 memo 评论总数。
+    // 标识符全部由 drizzle 表对象渲染（带引号、大小写敏感），不要手写裸表名。
+    const res = (await db.execute(sql`
       WITH ranked AS (
         SELECT *,
-               ROW_NUMBER() OVER (PARTITION BY memoId ORDER BY createdAt ASC) AS rn,
-               COUNT(*)     OVER (PARTITION BY memoId)                        AS total
-        FROM Comment
-        WHERE memoId IN (${sql.join(memoIds, sql`, `)})
+               ROW_NUMBER() OVER (PARTITION BY ${comments.memoId} ORDER BY ${comments.createdAt} ASC) AS rn,
+               COUNT(*)     OVER (PARTITION BY ${comments.memoId})                        AS total
+        FROM ${comments}
+        WHERE ${comments.memoId} IN (${sql.join(memoIds, sql`, `)})
       )
       SELECT * FROM ranked WHERE rn <= 6
-    `)
-    for (const c of rows as any[]) {
+    `)) as any
+    // postgres-js 驱动返回行数组（RowList），neon-http 等驱动返回 { rows } —— 兼容两种形态
+    const rows: any[] = Array.isArray(res) ? res : (res?.rows ?? [])
+    for (const c of rows) {
       if (!commentCountByMemo.has(c.memoId)) {
         commentCountByMemo.set(c.memoId, Number(c.total) || 0)
       }

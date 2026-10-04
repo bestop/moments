@@ -1,21 +1,24 @@
-// Outbound email via SMTP, using nodemailer on the Vercel Node runtime.
+// Outbound email via Resend (https://resend.com) on the Vercel Node runtime.
 //
-// (The Cloudflare deployment previously used `worker-mailer` because the
-// Workers runtime can't load nodemailer's Node net/tls deps — that
-// restriction disappears on Vercel, so we switch back to the battle-tested
-// nodemailer, which also restores parity with the pre-migration upstream.)
+// Replaces both the legacy Cloudflare `worker-mailer` (MailChannels) and the
+// interim nodemailer SMTP relay: Resend's HTTP API has no TCP/ports to worry
+// about on serverless, no per-mailbox auth codes to rotate, and it's the
+// de-facto standard email provider in the Vercel ecosystem.
 //
-// SMTP credentials live in the `Config` table (id=1), set via the admin UI:
-//   - mailHost / mailPort / mailSecure (1 = direct TLS port 465; 0 = STARTTLS port 587)
-//   - mailUser / mailPass
-//   - mailFrom (sender address) / mailName (display name)
-// `Config.enableEmail` is the master gate.
-//
-// Vercel Node functions allow arbitrary outbound TCP, so both 465 (TLS) and
-// 587 (STARTTLS) work. Popular options: QQ/163 mail SMTP, Gmail, Resend SMTP,
-// Mailgun SMTP, etc.
+// Configuration split:
+//   - API key  → `RESEND_API_KEY` env var (Vercel project env vars; never
+//     stored in the DB so it can't leak through the admin settings export)
+//   - Sender   → `Config` table (id=1) via the admin UI (/config):
+//       mailFrom (must be an address on a domain verified in Resend,
+//                 e.g. no-reply@yourdomain.com; for quick tests you can use
+//                 Resend's sandbox `onboarding@resend.dev`, which may only
+//                 deliver to your own account email)
+//       mailName (display name, defaults to "Moments")
+//       mailHost/mailPort/mailUser/mailPass are legacy SMTP columns —
+//       unused under Resend, kept so old rows import without friction.
+// `Config.enableEmail` remains the master gate.
 import type { H3Event } from 'h3'
-import nodemailer from 'nodemailer'
+import { Resend } from 'resend'
 import { eq } from 'drizzle-orm'
 import { useDb } from '~/lib/db'
 import { config as configTable } from '~/lib/db/schema'
@@ -34,6 +37,15 @@ export async function sendEmail(
   event: H3Event,
   options: SendEmailOptions,
 ): Promise<SendEmailResult> {
+  const apiKey = (process.env.RESEND_API_KEY ?? '').trim()
+  if (!apiKey) {
+    return {
+      success: false,
+      error:
+        'RESEND_API_KEY is not set. Add it to the Vercel project env vars (https://resend.com → API Keys).',
+    }
+  }
+
   const db = useDb(event)
   const rows = await db
     .select()
@@ -46,47 +58,30 @@ export async function sendEmail(
     return { success: false, error: 'Email service is not enabled' }
   }
 
-  const host = (siteConfig.mailHost ?? '').trim()
-  const port = siteConfig.mailPort ?? 0
-  const username = (siteConfig.mailUser ?? '').trim()
-  const password = (siteConfig.mailPass ?? '').trim()
-  const fromAddress = (siteConfig.mailFrom ?? '').trim() || username
+  const fromAddress = (siteConfig.mailFrom ?? '').trim()
   const fromName = (siteConfig.mailName ?? '').trim() || 'Moments'
-
-  if (!host || !port || !username || !password || !fromAddress) {
+  if (!fromAddress) {
     return {
       success: false,
-      error:
-        'SMTP not fully configured. Need mailHost, mailPort, mailUser, mailPass, mailFrom in Config.',
+      error: 'mailFrom is not configured. Set it in the admin UI (/config) — it must be on a Resend-verified domain.',
     }
   }
 
-  // mailSecure = 1 means direct TLS from the start (port 465).
-  // mailSecure = 0 means plain socket + STARTTLS upgrade (port 587).
-  const useSecure = !!siteConfig.mailSecure
-
   try {
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: useSecure,
-      auth: { user: username, pass: password },
-      // 连接池对 serverless 意义不大（实例随时回收），关闭以减少状态。
-      pool: false,
-      connectionTimeout: 10_000,
-      greetingTimeout: 10_000,
-      socketTimeout: 15_000,
-    })
-
-    const info = await transporter.sendMail({
-      from: `"${fromName}" <${fromAddress}>`,
-      to: options.email,
+    const resend = new Resend(apiKey)
+    const { data, error } = await resend.emails.send({
+      from: `${fromName} <${fromAddress}>`,
+      to: [options.email],
       subject: options.subject,
       html: options.message,
       text: stripHtml(options.message),
     })
 
-    return { success: true, messageId: info?.messageId }
+    if (error) {
+      const detail = [error.name, error.message].filter(Boolean).join(': ')
+      return { success: false, error: detail || String(error) }
+    }
+    return { success: true, messageId: data?.id }
   } catch (e: any) {
     return { success: false, error: e?.message ?? String(e) }
   }

@@ -1,16 +1,16 @@
-// Apply SQLite migrations (migrations/*.sql) to Turso / local libSQL file.
+// Apply PostgreSQL migrations (migrations/*.sql, drizzle-kit generated) to
+// Neon or any Postgres database.
 //
 // Usage:
-//   TURSO_DATABASE_URL=libsql://... TURSO_AUTH_TOKEN=... node scripts/apply-migrations.mjs
-//   # 本地开发（无需 token）：
-//   TURSO_DATABASE_URL=file:local.db node scripts/apply-migrations.mjs
+//   DATABASE_URL=postgres://... node scripts/apply-migrations.mjs
 //   # 或通过 npm script（会读取 .env）：
 //   pnpm db:migrate
 //
-// 与 Cloudflare D1 的 `wrangler d1 migrations apply` 等价：按文件名顺序应用，
-// 已应用过的文件记录在 _migrations 表中，重复执行安全（幂等）。
+// 等价于旧 D1 时代的 `wrangler d1 migrations apply` / 上一版 Turso 脚本：
+// 按文件名顺序应用，已应用过的文件记录在 _migrations 表中，重复执行安全（幂等）。
+// 每个 migration 文件在单个事务中执行（全部成功或全部回滚）。
 
-import { createClient } from '@libsql/client'
+import postgres from 'postgres'
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -35,13 +35,25 @@ function loadDotEnv() {
 async function main() {
   loadDotEnv()
 
-  const url = process.env.TURSO_DATABASE_URL
+  const url = process.env.DATABASE_URL ?? process.env.POSTGRES_URL
   if (!url) {
-    console.error('错误：未设置 TURSO_DATABASE_URL（libsql://... 或 file:local.db）')
+    console.error('错误：未设置 DATABASE_URL（Neon 连接串；本地开发可为 postgres://localhost:5432/moments）')
     process.exit(1)
   }
-  const authToken = process.env.TURSO_AUTH_TOKEN || undefined
-  const client = createClient({ url, authToken })
+
+  const sql = postgres(url, {
+    prepare: false, // Neon pooler（transaction mode）要求
+    max: 1,
+    connect_timeout: 10,
+  })
+
+  // 记录已应用的迁移
+  await sql`CREATE TABLE IF NOT EXISTS _migrations (
+    name text PRIMARY KEY,
+    applied_at timestamptz NOT NULL DEFAULT now()
+  )`
+  const appliedRows = await sql`SELECT name FROM _migrations`
+  const applied = new Set(appliedRows.map((r) => String(r.name)))
 
   const root = join(dirname(fileURLToPath(import.meta.url)), '..')
   const migrationsDir = join(root, 'migrations')
@@ -49,41 +61,40 @@ async function main() {
     .filter((f) => f.endsWith('.sql'))
     .sort()
 
-  // 记录已应用的迁移
-  await client.execute(`CREATE TABLE IF NOT EXISTS _migrations (
-    name TEXT PRIMARY KEY,
-    applied_at TEXT NOT NULL
-  )`)
-
-  const applied = new Set()
-  const { rows } = await client.execute('SELECT name FROM _migrations')
-  for (const row of rows) applied.add(String(row.name))
-
   let ran = 0
   for (const file of files) {
     if (applied.has(file)) {
       console.log(`= 跳过（已应用）: ${file}`)
       continue
     }
-    const sql = readFileSync(join(migrationsDir, file), 'utf8')
-    process.stdout.write(`→ 应用 ${file} ... `)
+    const content = readFileSync(join(migrationsDir, file), 'utf8')
+    // drizzle-kit 生成的文件用 `--> statement-breakpoint` 分隔语句；
+    // postgres-js 走扩展协议时一条调用只能带一条语句，必须拆开。
+    const statements = content
+      .split('--> statement-breakpoint')
+      .map((s) => s.trim())
+      .filter(Boolean)
+
+    process.stdout.write(`→ 应用 ${file}（${statements.length} 条语句）... `)
     try {
-      await client.executeMultiple(sql)
-      await client.execute({
-        sql: 'INSERT INTO _migrations (name, applied_at) VALUES (?, ?)',
-        args: [file, new Date().toISOString()],
+      await sql.begin(async (tx) => {
+        for (const stmt of statements) {
+          await tx.unsafe(stmt)
+        }
+        await tx`INSERT INTO _migrations (name) VALUES (${file})`
       })
       console.log('完成')
       ran++
     } catch (e) {
       console.log('失败')
       console.error(e)
+      await sql.end({ timeout: 5 })
       process.exit(1)
     }
   }
 
   console.log(ran === 0 ? '✓ 数据库结构已是最新' : `✓ 共应用 ${ran} 个迁移`)
-  client.close()
+  await sql.end({ timeout: 5 })
 }
 
 main().catch((e) => {

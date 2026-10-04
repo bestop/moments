@@ -1,4 +1,4 @@
-// Vercel-native password reset: Turso (drizzle) + PBKDF2 password hash +
+// Vercel-native password reset: Neon Postgres (drizzle) + PBKDF2 password hash +
 // Upstash-Redis-backed email verification codes. Verification codes are
 // written by sendMail.post.ts under key `resetPassword${email}` with a 5-minute TTL.
 import { eq } from 'drizzle-orm'

@@ -1,7 +1,7 @@
 // Vercel-native verification-code dispatch:
-//   - Turso (drizzle) replaces prisma for Config/SystemConfig/User reads
+//   - Neon Postgres (drizzle) replaces prisma for Config/SystemConfig/User reads
 //   - Upstash Redis (lib/kv) replaces the 5-minute verification-code TTL window
-//   - sendEmail() relays through SMTP via nodemailer (see utils/sendEmail.ts)
+//   - sendEmail() relays through Resend's HTTP API (see utils/sendEmail.ts)
 //
 // Key contract with register.post.ts (and future reset/changeEmail flows):
 // the code is written under key `${action}${email}` with a 5-minute TTL.

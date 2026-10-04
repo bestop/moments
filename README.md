@@ -8,10 +8,10 @@
 
 - 框架：Nuxt 3 (SSR) + Vue 3 + Pinia + Tailwind / shadcn-vue
 - 部署：Vercel（Nitro 的 `vercel` preset，Node 20+ runtime）
-- 数据库：Turso (libSQL / SQLite) + drizzle-orm —— 与原 D1 (SQLite) 同方言，查询层零改动
+- 数据库：Neon (PostgreSQL) + drizzle-orm（postgres-js 驱动，Neon 官方推荐的 serverless 组合；schema 已从 SQLite 方言全量转写为 PG，大小写敏感搜索行为用 ILIKE 对齐）
 - 对象存储：Vercel Blob（图片 / Live Photo 视频上传与 CDN 分发）
 - 缓存 / 短期状态：Upstash Redis（REST API，邮件验证码、找回密码 token 等，TTL 5 分钟）
-- 邮件：nodemailer SMTP（QQ/163/Gmail/Mailgun 等任意 SMTP 服务）
+- 邮件：Resend HTTP API（`RESEND_API_KEY` 环境变量 + 后台 `mailFrom`/`mailName` 发件人配置）
 - 密码哈希：Web Crypto PBKDF2-SHA256（兼容验证遗留的 bcrypt 哈希并在登录时自动重哈希）
 - JWT：`@tsndr/cloudflare-worker-jwt`（基于 Web Crypto，Node 20+ 原生可用）
 
@@ -19,29 +19,24 @@
 
 ## 前置准备
 
-1. [Vercel](https://vercel.com/signup) / [Turso](https://turso.tech) / [Upstash](https://upstash.com) 账号
+1. [Vercel](https://vercel.com/signup) 账号（数据库 Neon、KV Upstash、邮件 Resend 均可在 Vercel Marketplace 一键开通，也可使用各家免费直连账号）
 2. Node.js ≥ 20 以及 [pnpm](https://pnpm.io/installation)
 3. （首次部署前）本地安装 Vercel CLI：`npm i -g vercel`
 
 ## 一次性资源准备
 
-### 1. 创建 Turso 数据库
+### 1. 创建 Neon 数据库
+
+**推荐：Vercel Marketplace 一键开通**——Vercel 项目 → **Storage** → **Marketplace → Neon** → 创建并 **Connect to Project**，`DATABASE_URL` 会自动注入环境变量。
+
+或在 [neon.tech](https://neon.tech) 手动创建后复制 **Pooled connection** 字符串（形如 `postgresql://user:pass@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require`）填入 `DATABASE_URL`。
 
 ```bash
-# 安装 Turso CLI（https://docs.turso.tech/cli/introduction）
-curl -sSfL https://get.tur.so/install.sh | bash
-turso auth signup   # 或 turso auth login
-
-# 创建数据库
-turso db create moments-db
-
-# 获取连接 URL 与 Token（填入环境变量 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN）
-turso db show moments-db --url
-turso db tokens create moments-db
-
-# 应用表结构（读取 .env 中的 TURSO_* 变量）
+# 应用表结构（读取 .env 中的 DATABASE_URL）
 pnpm db:migrate
 ```
+
+> 连接层已内置 `prepare: false`（Neon pooler 事务模式池化的硬性要求）与小连接池，无需额外调参。
 
 ### 2. 创建 Upstash Redis
 
@@ -60,29 +55,29 @@ pnpm db:migrate
 
 | 变量 | 说明 | 必需 |
 | ---- | ---- | ---- |
-| `TURSO_DATABASE_URL` | Turso 连接串（`libsql://...`；本地开发可用 `file:local.db`） | ✅ |
-| `TURSO_AUTH_TOKEN` | Turso 访问 token（`file:` 模式可省略） | ✅ |
+| `DATABASE_URL` | Neon Postgres 连接串（Pooled，`postgresql://...-pooler...`；本地可指向 localhost PG） | ✅ |
 | `JWT_SECRET` | 签发会话 JWT 的密钥，请用足够长的随机字符串 | ✅ |
 | `JWT_EXPIRES_IN` | JWT 有效期，例如 `7d` / `24h` / `60m`（默认 24h） | ❌ |
 | `BLOB_READ_WRITE_TOKEN` | Vercel Blob 读写令牌（Storage 连接后自动注入） | ✅ |
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL | 启用注册/找回密码时需要 |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST Token | 同上 |
+| `RESEND_API_KEY` | Resend API Key（https://resend.com → API Keys） | 启用邮件验证码/通知时需要 |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Web Push VAPID 三件套 | 启用推送时需要 |
 | `RECAPTCHA_SECRET_KEY` | reCAPTCHA v3 后端校验 secret | 启用人机校验时需要 |
 | `TENCENT_MAP_KEY` | 腾讯地图 Key（IP 归属地欢迎语） | 启用位置时需要 |
 | `SITE_URL` | 站点对外 URL，用于邮件 / 跳转等绝对链接 | ❌ |
 | `SITE_NAME` | 站点名称（默认 `Moments`） | ❌ |
 
-> SMTP 邮件账号不通过环境变量配置——部署后在管理后台（`/config`）的邮件设置里填写 `mailHost / mailPort / mailUser / mailPass / mailFrom / mailName`，与上游传统版一致。
+> 邮件发送走 Resend HTTP API：`RESEND_API_KEY` 配在环境变量；发件人地址/显示名在管理后台（`/config`）的 `mailFrom` / `mailName` 中填写（发件域名需先在 Resend 验证）。
 
 ## 本地开发
 
 ```bash
 pnpm install
 
-# 准备 .env（参考 .env.example；数据库可先用本地文件）
+# 准备 .env（参考 .env.example；数据库可先用本地 Postgres 或 Neon 分支库）
 cp .env.example .env
-# .env 中设置 TURSO_DATABASE_URL=file:local.db 即可先跑起来
+# .env 中 DATABASE_URL 指向本地 Postgres 即可先跑起来
 
 # 建表
 pnpm db:migrate
@@ -136,30 +131,38 @@ push 到 `master` / `vercel-migration` 分支即自动 build + 部署。
 
 ## 数据库 / 存储设计
 
-- D1 时代的结构定义原样沿用：SQL 在 [`migrations/0000_initial.sql`](./migrations/0000_initial.sql)（SQLite 方言，Turso 直接兼容），TS 端 schema 在 [`lib/db/schema.ts`](./lib/db/schema.ts)
-- 迁移执行工具：`pnpm db:migrate`（等价于原 `wrangler d1 migrations apply`，幂等，记录在 `_migrations` 表）
+- PG 版结构定义：SQL 在 [`migrations/`](./migrations)（由 drizzle-kit 从 [`lib/db/schema.ts`](./lib/db/schema.ts) 生成，改表后跑 `pnpm db:generate` 重新生成）
+- 迁移执行工具：`pnpm db:migrate`（幂等，记录在 `_migrations` 表，每个文件单事务执行）
 - 图片 Blob key 规范：`<short-uuid>.<ext>`，DB 中引用形式 `/upload/<short-uuid>.<ext>`；访问时由 `/upload/[filename]` 路由 302 到 Vercel Blob CDN URL（带 immutable 缓存头）
 - Redis key 规范：`moments:kv:<action><email>`（例如 `moments:kv:register${email}`），TTL 5 分钟
 
-## 从旧 Cloudflare 部署迁移数据（可选）
+## 从旧部署迁移数据（D1/Turso → Neon，可选）
 
-如果原来的 D1 里有数据、R2 里有图片：
+如果原来的 D1（或上一版 Turso）里有数据：
 
 ```bash
-# 1. 导出 D1 数据为 SQL（需 wrangler + CF 权限）
+# 1. 导出 SQLite 方言 SQL dump（需 wrangler + CF 权限）
 pnpm dlx wrangler d1 export moments-db --remote --output=dump.sql
+# （Turso 旧库则用：turso db dump moments-db > dump.sql）
 
-# 2. 导入 Turso（Turso 兼容 SQLite 方言；建议先跑 pnpm db:migrate 建表，
-#    再用 sqlite3/turso db shell 执行 dump 时跳过 CREATE TABLE 冲突，
-#    或者直接导入到空库 —— dump 里已含完整结构）
-turso db shell moments-db < dump.sql
+# 2. 在 Neon 建表
+DATABASE_URL=postgres://... pnpm db:migrate
 
-# 3. 迁移图片：用 rclone 把 R2 桶同步到本地目录
+# 3. 回放数据：只执行 dump 里的 INSERT 语句（跳过 SQLite 方言的
+#    CREATE TABLE/INDEX；表名列名带双引号、大小写与 PG 建表一致，
+#    布尔列的 0/1、文本时间戳 PG 均可直接接收）
+grep -E '^INSERT INTO' dump.sql | psql "$DATABASE_URL" -f -
+
+# 4. 关键：把 serial 序列拨到已有最大 id 之后，否则新增记录主键冲突
+psql "$DATABASE_URL" -f scripts/reset-sequences.sql
+
+# 5. 图片迁移（不变）：rclone 从 R2 同步 → 上传 Vercel Blob
 rclone sync r2:moments-uploads ./r2-files
-
-# 4. 把本地目录里的对象上传到 Vercel Blob
 node scripts/upload-dir-to-blob.mjs ./r2-files
 ```
+
+> 若导出的 INSERT 未给表名加引号（PG 会折叠成小写找不到表），先处理：
+> `sed -E "s/INSERT INTO (User|Memo|Comment|Config|Notification|SystemConfig|PushSubscription)/INSERT INTO \"\\1\"/" dump.sql > dump-pg.sql`
 
 ## 已知限制
 

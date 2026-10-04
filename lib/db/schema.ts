@@ -1,11 +1,17 @@
-// Drizzle ORM schema for moments — mirrors migrations/0000_initial.sql.
-// Application code uses these table definitions; D1 (production) and
-// better-sqlite3 (local dev) both work because everything below is
-// dialect-agnostic SQLite-core syntax.
-import { sqliteTable, integer, text, index } from 'drizzle-orm/sqlite-core'
+// Drizzle ORM schema for moments — PostgreSQL (Neon) edition.
+//
+// Migrated 1:1 from the SQLite/D1 schema: table names, column names and the
+// JS-facing value contract are all preserved, so application code keeps
+// working unchanged:
+//   - `serial` replaces SQLite `integer primary key autoincrement`
+//   - SQLite `integer({ mode: 'boolean' })` becomes native PG `boolean`
+//     (JS side still sees real booleans, exactly as before)
+//   - timestamps stay TEXT (ISO strings) — ordering/comparison semantics
+//     are identical and no call-site needed to change
+import { pgTable, integer, text, boolean, serial, index } from 'drizzle-orm/pg-core'
 
-export const users = sqliteTable('User', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
+export const users = pgTable('User', {
+  id: serial('id').primaryKey(),
   username: text('username').notNull().unique(),
   nickname: text('nickname'),
   password: text('password').notNull(),
@@ -14,7 +20,7 @@ export const users = sqliteTable('User', {
   coverUrl: text('coverUrl'),
   createdAt: text('createdAt').notNull(),
   updatedAt: text('updatedAt').notNull(),
-  enableS3: integer('enableS3', { mode: 'boolean' }).notNull().default(false),
+  enableS3: boolean('enableS3').notNull().default(false),
   domain: text('domain'),
   bucket: text('bucket'),
   region: text('region'),
@@ -31,10 +37,10 @@ export const users = sqliteTable('User', {
   code: text('code'),
 })
 
-export const memos = sqliteTable(
+export const memos = pgTable(
   'Memo',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     content: text('content'),
     imgs: text('imgs'),
     favCount: integer('favCount').notNull().default(0),
@@ -50,7 +56,7 @@ export const memos = sqliteTable(
     externalUrl: text('externalUrl'),
     externalTitle: text('externalTitle'),
     externalFavicon: text('externalFavicon').notNull().default('/favicon.png'),
-    pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+    pinned: boolean('pinned').notNull().default(false),
     atpeople: text('atpeople'),
     availableForProple: text('availableForProple'),
   },
@@ -60,10 +66,10 @@ export const memos = sqliteTable(
   }),
 )
 
-export const comments = sqliteTable(
+export const comments = pgTable(
   'Comment',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     content: text('content'),
     replyTo: text('replyTo'),
     username: text('username'),
@@ -84,9 +90,9 @@ export const comments = sqliteTable(
   }),
 )
 
-export const config = sqliteTable('Config', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  enableS3: integer('enableS3', { mode: 'boolean' }).notNull().default(false),
+export const config = pgTable('Config', {
+  id: serial('id').primaryKey(),
+  enableS3: boolean('enableS3').notNull().default(false),
   s3Domain: text('s3Domain'),
   s3Bucket: text('s3Bucket'),
   s3Region: text('s3Region'),
@@ -100,32 +106,33 @@ export const config = sqliteTable('Config', {
   js: text('js'),
   beianNo: text('beianNo'),
   siteUrl: text('siteUrl'),
-  enableRecaptcha: integer('enableRecaptcha', { mode: 'boolean' }).notNull().default(false),
+  enableRecaptcha: boolean('enableRecaptcha').notNull().default(false),
   recaptchaSiteKey: text('recaptchaSiteKey'),
   recaptchaSecretKey: text('recaptchaSecretKey'),
-  enableTencentMap: integer('enableTencentMap', { mode: 'boolean' }).notNull().default(false),
+  enableTencentMap: boolean('enableTencentMap').notNull().default(false),
   tencentMapKey: text('tencentMapKey'),
-  enableAliyunDective: integer('enableAliyunDective', { mode: 'boolean' }).notNull().default(false),
+  enableAliyunDective: boolean('enableAliyunDective').notNull().default(false),
   aliyunAccessKeyId: text('aliyunAccessKeyId'),
   aliyunAccessKeySecret: text('aliyunAccessKeySecret'),
-  enableEmail: integer('enableEmail', { mode: 'boolean' }).notNull().default(false),
+  enableEmail: boolean('enableEmail').notNull().default(false),
   mailHost: text('mailHost'),
   mailPort: integer('mailPort').notNull().default(587),
-  mailSecure: integer('mailSecure', { mode: 'boolean' }).notNull().default(false),
+  mailSecure: boolean('mailSecure').notNull().default(false),
   mailUser: text('mailUser'),
   mailPass: text('mailPass'),
   mailFrom: text('mailFrom'),
   mailName: text('mailName'),
   // R2-era columns. Parallel with legacy s3* until admins migrate.
-  enableR2: integer('enableR2', { mode: 'boolean' }).notNull().default(false),
+  // (Unused on Vercel — media lives in Vercel Blob. Kept so old rows import cleanly.)
+  enableR2: boolean('enableR2').notNull().default(false),
   r2PublicBaseUrl: text('r2PublicBaseUrl'),
   r2ThumbnailSuffix: text('r2ThumbnailSuffix'),
 })
 
-export const notifications = sqliteTable(
+export const notifications = pgTable(
   'Notification',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     type: integer('type').notNull().default(0),
     sendFrom: integer('send_from'),
     sendToUserId: integer('send_to_user_id'),
@@ -139,10 +146,10 @@ export const notifications = sqliteTable(
   }),
 )
 
-export const systemConfig = sqliteTable(
+export const systemConfig = pgTable(
   'SystemConfig',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     type: integer('type').notNull().default(1),
     key: text('key').notNull(),
     value: text('value'),
@@ -153,10 +160,10 @@ export const systemConfig = sqliteTable(
 )
 
 // Web Push 浏览器订阅。同一 user 可有多个 endpoint（多设备 / 浏览器）
-export const pushSubscriptions = sqliteTable(
+export const pushSubscriptions = pgTable(
   'PushSubscription',
   {
-    id: integer('id').primaryKey({ autoIncrement: true }),
+    id: serial('id').primaryKey(),
     userId: integer('userId').notNull(),
     endpoint: text('endpoint').notNull().unique(),
     p256dh: text('p256dh').notNull(),

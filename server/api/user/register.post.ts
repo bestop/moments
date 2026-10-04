@@ -1,7 +1,7 @@
-// Vercel-native registration: Turso (drizzle) + PBKDF2 password hash +
+// Vercel-native registration: Neon Postgres (drizzle) + PBKDF2 password hash +
 // Upstash-Redis-backed email verification codes. Verification codes are
 // written by sendMail.post.ts under key `register${email}` with a 5-minute TTL.
-import { eq, like } from 'drizzle-orm'
+import { eq, ilike } from 'drizzle-orm'
 import { hashPassword } from '~/lib/auth/password'
 import { useDb } from '~/lib/db'
 import { systemConfig, users } from '~/lib/db/schema'
@@ -75,7 +75,8 @@ export default defineEventHandler(async (event) => {
   const existingByUsername = await db
     .select()
     .from(users)
-    .where(like(users.username, '%' + username + '%'))
+    // SQLite 的 LIKE 对 ASCII 不分大小写，PG 换 ilike 保持同语义。
+    .where(ilike(users.username, '%' + username + '%'))
     .limit(1)
   if (existingByUsername[0]) {
     return { success: false, message: '用户名已经注册' }

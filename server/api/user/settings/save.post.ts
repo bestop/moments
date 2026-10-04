@@ -1,5 +1,5 @@
 // Vercel-native user-settings save:
-//   - prisma -> Turso (drizzle) via useDb(event)
+//   - prisma -> Neon Postgres (drizzle) via useDb(event)
 //   - bcrypt -> Web Crypto PBKDF2 via hashPassword()
 //   - redis -> Upstash Redis via lib/kv (key `changeEmail${newEMail}` matches sendMail.post.ts)
 import { and, eq, ne } from 'drizzle-orm'
