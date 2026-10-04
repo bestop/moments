@@ -61,7 +61,13 @@ export default defineEventHandler(async (event) => {
     }
     if (result.blob.contentType) setHeader(event, 'Content-Type', result.blob.contentType)
     if (result.blob.size) setHeader(event, 'Content-Length', String(result.blob.size))
-    setHeader(event, 'Cache-Control', 'public, max-age=31536000, immutable')
+    // 浏览器侧 immutable 长缓存（重复访问零回源）；边缘侧限 1 天，避免
+    // memo 删除后 Blob 对象已清而新访客仍从边缘缓存拿到已删内容。
+    setHeader(
+      event,
+      'Cache-Control',
+      'public, max-age=31536000, immutable, s-maxage=86400',
+    )
     return sendStream(event, result.stream)
   }
 
