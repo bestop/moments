@@ -32,7 +32,8 @@ export default defineEventHandler(async (event) => {
 
   // 图片清理：DB 里存的是 /upload/<key>（或历史遗留的完整 Blob URL），
   // 统一抽取 Blob pathname 后删除。单个删失败不影响 memo 删除本身。
-  if (memo.imgs && process.env.BLOB_READ_WRITE_TOKEN) {
+  // 静态 token 或新版连接模型（BLOB_STORE_ID + OIDC）任一存在即执行 Blob 清理
+  if (memo.imgs && (process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID)) {
     const pathnames = memo.imgs
       .split(',')
       .map((s) => s.trim())

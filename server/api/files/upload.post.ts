@@ -37,11 +37,15 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  // 两种凭证形态任一存在即视为已配置：
+  // - BLOB_READ_WRITE_TOKEN：静态令牌（手动创建 token 或旧版连接模型）
+  // - BLOB_STORE_ID：新版 Storage 连接模型，运行时由 SDK 用
+  //   VERCEL_OIDC_TOKEN 动态换取短期凭证（@vercel/blob >= 2.x）
+  if (!process.env.BLOB_READ_WRITE_TOKEN && !process.env.BLOB_STORE_ID) {
     return {
       success: false,
       message:
-        'BLOB_READ_WRITE_TOKEN 未配置。请在 Vercel 项目环境变量（或本地 .env）中设置 Vercel Blob 的读写令牌。',
+        'Vercel Blob 未配置：请在 Vercel 项目 Storage 中连接 Blob Store（自动注入 BLOB_STORE_ID），或设置 BLOB_READ_WRITE_TOKEN。',
       filename: '',
     }
   }

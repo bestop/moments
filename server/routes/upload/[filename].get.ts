@@ -23,10 +23,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Invalid filename' })
   }
 
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  // 两种凭证形态任一存在即视为已配置（静态 token，或新版连接模型的
+  // BLOB_STORE_ID + 运行时 OIDC 动态凭证，@vercel/blob >= 2.x）。
+  if (!process.env.BLOB_READ_WRITE_TOKEN && !process.env.BLOB_STORE_ID) {
     throw createError({
       statusCode: 500,
-      statusMessage: 'BLOB_READ_WRITE_TOKEN is not configured',
+      statusMessage: 'Vercel Blob is not configured (connect a Blob store or set BLOB_READ_WRITE_TOKEN)',
     })
   }
 
@@ -41,7 +43,7 @@ export default defineEventHandler(async (event) => {
     if (e instanceof BlobAccessError) {
       throw createError({
         statusCode: 500,
-        statusMessage: 'Blob access denied (check BLOB_READ_WRITE_TOKEN)',
+        statusMessage: 'Blob access denied (connect the Blob store to the project or set BLOB_READ_WRITE_TOKEN)',
       })
     }
     const reason = e instanceof Error ? e.message : String(e)
