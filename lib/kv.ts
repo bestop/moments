@@ -23,8 +23,12 @@ type MemoryEntry = { value: string; expiresAt: number }
 const memory = new Map<string, MemoryEntry>()
 
 function restConfig(): { url: string; token: string } | null {
-  const url = process.env.UPSTASH_REDIS_REST_URL
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+  // Two naming conventions are supported:
+  // - UPSTASH_REDIS_REST_URL/TOKEN — manual Upstash setup (REST API pair)
+  // - KV_REST_API_URL/TOKEN — injected by the Vercel Marketplace Upstash
+  //   integration (same REST endpoint, different variable names)
+  const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN
   if (!url || !token) return null
   return { url: url.replace(/\/+$/, ''), token }
 }
