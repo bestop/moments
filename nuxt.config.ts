@@ -64,10 +64,12 @@ export default defineNuxtConfig({
     componentDir: "./components/ui",
   },
   nitro: {
-    preset: "cloudflare-pages",
+    // Vercel Node runtime preset：server/api 与 server/routes 变成
+    // Vercel Functions（Node 20+），静态资源走 Vercel CDN。
+    preset: 'vercel',
     esbuild: {
       options: {
-        target: "esnext",
+        target: 'esnext',
       },
     },
   },
@@ -90,26 +92,10 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     public: {
-      // 通过 env CF_IMAGE_TRANSFORM=on / true / 1 启用 Cloudflare 图片转换；
-      // 默认关闭以免 zone 上没启用 Image Transformations 时所有 /cdn-cgi/image 全 404
-      cfImageTransform: ['on', 'true', '1', 'yes'].includes(
-        (process.env.CF_IMAGE_TRANSFORM || '').toLowerCase(),
-      ),
-      // Web Push VAPID 公钥（浏览器订阅时需要）。私钥/subject 在 server 端用
-      // 默认值跟 wrangler.toml [vars] 同步：build 时 process.env 取不到，避免 baked 成空串
+      // Web Push VAPID 公钥（浏览器订阅时需要）。私钥/subject 走服务端
+      // 环境变量 VAPID_PRIVATE_KEY / VAPID_SUBJECT（Vercel 项目环境变量）。
       vapidPublicKey: process.env.VAPID_PUBLIC_KEY
         || 'BBWjYp1l-pjKkNcjNghpQb5B7DmwtnOhLsCbBERCUbzSI40D5CouDewrIg5sWTpXb1ClbJBCNE_VZmxof395Ch8',
-      // R2 公网 URL —— 浏览器直接拉，绕过 Worker 节省请求；不设的话
-      // 走 Worker 的 /upload/[filename] 路由(SSR + R2 binding 兜底)。
-      //
-      // 之前 fallback 默认 'https://pub-...r2.dev' 是一条 CF specific
-      // 的死链 —— 在自托管 / RandallFlare 部署下,如果忘了往构建环境
-      // 灌 R2_PUBLIC_BASE_URL,前端图片 src 会直接打这个 CF 域名 404,
-      // 而 Pages Worker 的 /upload 路由完全用不上。改成空字符串后,
-      // rewriteToR2 自动 fallback 到相对路径,浏览器 resolve 到当前
-      // origin → 走自托管的 Pages Worker → R2 binding → bucket。
-      // 想直 CDN 才需要显式设 R2_PUBLIC_BASE_URL=https://<bucket-host>.
-      r2PublicBaseUrl: (process.env.R2_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
     },
   },
   app: {

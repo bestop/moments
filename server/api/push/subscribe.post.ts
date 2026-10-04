@@ -1,7 +1,7 @@
 // 浏览器拿到 PushSubscription 后 POST 这里：endpoint + keys.p256dh + keys.auth
 // 必须登录（auth 中间件已在 needLoginUrl）
 import { eq } from 'drizzle-orm'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { pushSubscriptions } from '~/lib/db/schema'
 
 type SubReq = {

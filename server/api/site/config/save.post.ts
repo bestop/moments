@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { useDb, type DB } from '~/lib/db/d1'
+import { useDb, type DB } from '~/lib/db'
 import { config, notifications, systemConfig } from '~/lib/db/schema'
 
 type SaveConfigsReq = {

@@ -7,7 +7,7 @@
 import { eq } from 'drizzle-orm'
 import { aliTextJudge } from '~/utils/aliTextJudge'
 import { sendEmail } from '~/utils/sendEmail'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { pushToUser } from '~/lib/push'
 import type { Config } from '~/lib/db/schema'
 import {

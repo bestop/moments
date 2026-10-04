@@ -1,12 +1,12 @@
-// Cloudflare-native user-settings save:
-//   - prisma -> D1 (drizzle) via useDb(event)
+// Vercel-native user-settings save:
+//   - prisma -> Turso (drizzle) via useDb(event)
 //   - bcrypt -> Web Crypto PBKDF2 via hashPassword()
-//   - redis -> KV binding (key `changeEmail${newEMail}` matches sendMail.post.ts)
+//   - redis -> Upstash Redis via lib/kv (key `changeEmail${newEMail}` matches sendMail.post.ts)
 import { and, eq, ne } from 'drizzle-orm'
 import { hashPassword } from '~/lib/auth/password'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { users } from '~/lib/db/schema'
-import { getCfEnv } from '~/lib/cf-env'
+import { kvGet, kvDelete } from '~/lib/kv'
 
 type SaveSettingsReq = {
   username?: string
@@ -20,16 +20,6 @@ type SaveSettingsReq = {
   css?: string
   js?: string
   eMailVerificationCode?: string
-}
-
-function getKv(event: any): KVNamespace {
-  const kv = getCfEnv(event).KV
-  if (!kv) {
-    throw new Error(
-      'KV binding "KV" is not available on event.context.cloudflare.env or globalThis.__CF_ENV__.',
-    )
-  }
-  return kv
 }
 
 export default defineEventHandler(async (event) => {
@@ -102,13 +92,12 @@ export default defineEventHandler(async (event) => {
     if (!eMailVerificationCode) {
       return { success: false, message: '请输入验证码' }
     }
-    const kv = getKv(event)
     const codeKey = 'changeEmail' + newEMail
-    const verificationCode = await kv.get(codeKey)
+    const verificationCode = await kvGet(codeKey)
     if (!verificationCode || verificationCode !== eMailVerificationCode) {
       return { success: false, message: '验证码错误' }
     }
-    await kv.delete(codeKey)
+    await kvDelete(codeKey)
     data.eMail = newEMail
   }
 

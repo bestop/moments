@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { pushSubscriptions } from '~/lib/db/schema'
 
 type UnsubReq = { endpoint: string }

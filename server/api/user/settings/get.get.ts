@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { users, config as configTable, systemConfig } from '~/lib/db/schema'
 
 type UserPublic = {

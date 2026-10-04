@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { memos } from '~/lib/db/schema'
 
 type LikeMemoReq = {

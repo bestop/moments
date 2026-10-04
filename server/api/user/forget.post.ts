@@ -1,26 +1,16 @@
-// Cloudflare-native password reset: D1 (drizzle) + PBKDF2 password hash +
-// KV-backed email verification codes. Verification codes are written by
-// sendMail.post.ts under key `resetPassword${email}` with a 5-minute TTL.
+// Vercel-native password reset: Turso (drizzle) + PBKDF2 password hash +
+// Upstash-Redis-backed email verification codes. Verification codes are
+// written by sendMail.post.ts under key `resetPassword${email}` with a 5-minute TTL.
 import { eq } from 'drizzle-orm'
 import { hashPassword } from '~/lib/auth/password'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { users } from '~/lib/db/schema'
-import { getCfEnv } from '~/lib/cf-env'
+import { kvGet, kvDelete } from '~/lib/kv'
 
 type registerReq = {
   user: string
   password: string
   emailVerificationCode: string
-}
-
-function getKv(event: any): KVNamespace {
-  const kv = getCfEnv(event).KV
-  if (!kv) {
-    throw new Error(
-      'KV binding "KV" is not available on event.context.cloudflare.env or globalThis.__CF_ENV__.',
-    )
-  }
-  return kv
 }
 
 export default defineEventHandler(async (event) => {
@@ -57,9 +47,8 @@ export default defineEventHandler(async (event) => {
   }
   const email = target.eMail
 
-  const kv = getKv(event)
   const codeKey = 'resetPassword' + email
-  const retrievedCode = await kv.get(codeKey)
+  const retrievedCode = await kvGet(codeKey)
   if (retrievedCode === null || retrievedCode !== emailVerificationCode) {
     return { success: false, message: '验证码错误或过期' }
   }
@@ -71,7 +60,7 @@ export default defineEventHandler(async (event) => {
     .set({ password: passwordHash, updatedAt: now })
     .where(eq(users.id, userId))
 
-  await kv.delete(codeKey)
+  await kvDelete(codeKey)
 
   return { success: true }
 })

@@ -1,30 +1,20 @@
-// Cloudflare-native verification-code dispatch:
-//   - D1 (drizzle) replaces prisma for Config/SystemConfig/User reads
-//   - KV replaces redis for the 5-minute verification-code TTL window
-//   - sendEmail() now relays through MailChannels (see utils/sendEmail.ts)
+// Vercel-native verification-code dispatch:
+//   - Turso (drizzle) replaces prisma for Config/SystemConfig/User reads
+//   - Upstash Redis (lib/kv) replaces the 5-minute verification-code TTL window
+//   - sendEmail() relays through SMTP via nodemailer (see utils/sendEmail.ts)
 //
 // Key contract with register.post.ts (and future reset/changeEmail flows):
-// the code is written under key `${action}${email}` with expirationTtl=300.
+// the code is written under key `${action}${email}` with a 5-minute TTL.
 // register.post.ts reads/deletes the same key on consumption.
 import { eq } from 'drizzle-orm'
 import { sendEmail } from '~/utils/sendEmail'
-import { useDb, type DB } from '~/lib/db/d1'
+import { useDb, type DB } from '~/lib/db'
 import { config as configTable, systemConfig, users } from '~/lib/db/schema'
-import { getCfEnv } from '~/lib/cf-env'
+import { kvGet, kvPut } from '~/lib/kv'
 
 type sendMailReq = {
   email: string
   action: string
-}
-
-function getKv(event: any): KVNamespace {
-  const kv = getCfEnv(event).KV
-  if (!kv) {
-    throw new Error(
-      'KV binding "KV" is not available on event.context.cloudflare.env or globalThis.__CF_ENV__.',
-    )
-  }
-  return kv
 }
 
 export default defineEventHandler(async (event) => {
@@ -32,7 +22,6 @@ export default defineEventHandler(async (event) => {
   let userid = 0
 
   const db = useDb(event)
-  const kv = getKv(event)
 
   if (action === 'resetPassword') {
     // Legacy behaviour: try username lookup first (the form posts a single
@@ -68,7 +57,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const existing = await kv.get(action + email)
+  const existing = await kvGet(action + email)
   if (existing) {
     return { success: false, message: '上一条验证码还未过期，请五分钟后再试' }
   }
@@ -157,7 +146,7 @@ export default defineEventHandler(async (event) => {
   }
   const result = await sendEmail(event, sendData)
   if (result.success) {
-    await kv.put(action + email, verificationCode, { expirationTtl: 5 * 60 })
+    await kvPut(action + email, verificationCode, 5 * 60)
     return {
       success: true,
       message: '验证码已发送至您的邮箱，验证码五分钟内有效，请注意查收',

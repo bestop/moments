@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
-import { useDb } from '~/lib/db/d1'
+import { del } from '@vercel/blob'
+import { useDb } from '~/lib/db'
 import { memos } from '~/lib/db/schema'
-import { getCfEnv } from '~/lib/cf-env'
 
 type RemoveMemoReq = {
   memoId?: number
@@ -30,20 +30,32 @@ export default defineEventHandler(async (event) => {
 
   await db.delete(memos).where(eq(memos.id, memoId))
 
-  const uploads = getCfEnv(event).UPLOADS
-  if (uploads && memo.imgs) {
-    const keys = memo.imgs
+  // 图片清理：DB 里存的是 /upload/<key>（或历史遗留的完整 Blob URL），
+  // 统一抽取 Blob pathname 后删除。单个删失败不影响 memo 删除本身。
+  if (memo.imgs && process.env.BLOB_READ_WRITE_TOKEN) {
+    const pathnames = memo.imgs
       .split(',')
       .map((s) => s.trim())
-      .filter((s) => s.startsWith('/upload/'))
-      .map((s) => s.replace(/^\/upload\//, ''))
-      .filter((k) => k.length > 0)
-    await Promise.all(
-      keys.map(async (key) => {
+      .map((s) => {
+        if (s.startsWith('/upload/')) return s.replace(/^\/upload\//, '')
+        // 完整 blob URL: https://<store>.public.blob.vercel-storage.com/<pathname>
         try {
-          await uploads.delete(key)
+          const u = new URL(s)
+          if (u.hostname.endsWith('.public.blob.vercel-storage.com')) {
+            return decodeURIComponent(u.pathname.replace(/^\//, ''))
+          }
+        } catch {
+          // not a URL — ignore
+        }
+        return null
+      })
+      .filter((k): k is string => !!k && k.length > 0)
+    await Promise.all(
+      pathnames.map(async (pathname) => {
+        try {
+          await del(pathname)
         } catch (e) {
-          console.log('R2 delete error:', e)
+          console.log('Blob delete error:', pathname, e)
         }
       }),
     )

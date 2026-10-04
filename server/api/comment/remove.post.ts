@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { comments, memos } from '~/lib/db/schema'
 
 type RemoveCommentReq = {

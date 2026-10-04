@@ -1,8 +1,8 @@
 // 给定 userId，向他所有订阅推送一条通知。失败的 endpoint（404/410/408）从 DB 删掉。
 import { eq, inArray } from 'drizzle-orm'
 import type { H3Event } from 'h3'
-import { getCfEnv } from '~/lib/cf-env'
-import { useDb } from '~/lib/db/d1'
+import { getEnv } from '~/lib/env'
+import { useDb } from '~/lib/db'
 import { pushSubscriptions } from '~/lib/db/schema'
 import { sendWebPush, type VapidKeys } from '~/lib/webpush'
 
@@ -19,11 +19,10 @@ export type NotificationPayload = {
   icon?: string
 }
 
-function getVapid(event: H3Event): VapidKeys | null {
-  const env = getCfEnv(event) as Record<string, string | undefined>
-  const publicKey = env.VAPID_PUBLIC_KEY
-  const privateKey = env.VAPID_PRIVATE_KEY
-  const subject = env.VAPID_SUBJECT
+function getVapid(_event: H3Event): VapidKeys | null {
+  const publicKey = getEnv('VAPID_PUBLIC_KEY')
+  const privateKey = getEnv('VAPID_PRIVATE_KEY')
+  const subject = getEnv('VAPID_SUBJECT')
   if (!publicKey || !privateKey || !subject) return null
   return { publicKey, privateKey, subject }
 }

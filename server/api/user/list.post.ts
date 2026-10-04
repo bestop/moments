@@ -1,5 +1,5 @@
 import { and, like, ne } from 'drizzle-orm'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { users } from '~/lib/db/schema'
 
 type ListUserReq = {

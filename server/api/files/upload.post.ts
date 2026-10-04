@@ -1,46 +1,18 @@
+// Image / LivePhoto-video upload endpoint — Vercel Blob edition.
+//
+// Previously this wrote to a Cloudflare R2 binding and polled the r2.dev
+// public host for propagation; on Vercel we write to Vercel Blob, whose
+// public URL is available immediately after `put()` resolves (no
+// propagation window), so the old waitForR2Propagation dance is gone.
+//
+// The response keeps the historic `filename: /upload/<key>` shape so the
+// DB (`Memo.imgs`) and every frontend consumer stay unchanged; the
+// server/routes/upload/[filename].get.ts route 302-redirects that path to
+// the blob's CDN URL.
 import short from 'short-uuid'
-import { getCfEnv } from '~/lib/cf-env'
+import { put } from '@vercel/blob'
 
 type FileInfo = { name: string; filename: string; data: Uint8Array; type: string }
-
-/**
- * After R2.put resolves, the public hostname (`R2_PUBLIC_BASE_URL`,
- * usually `pub-*.r2.dev` or a custom domain) can still 404 the new
- * key for up to a few seconds. The client receives the upload
- * response and immediately sets `<img src=getImgUrl(/upload/<key>)>`,
- * which navigates to that public URL — and the browser sees the 404,
- * which doesn't auto-retry.
- *
- * Poll HEAD against the public URL until it's reachable, with short
- * back-off. Returns once the object is visible OR after the timeout
- * budget. We return success even on timeout (the upload itself
- * succeeded — better to let the client retry image load than to
- * fail the whole flow).
- */
-async function waitForR2Propagation(
-  publicBase: string | undefined,
-  key: string,
-): Promise<{ visible: boolean; waitedMs: number }> {
-  if (!publicBase) return { visible: true, waitedMs: 0 }
-  const start = Date.now()
-  // Total budget ≈ 6.2s in the worst case (200 + 400 + 800 + 1600 + 3200).
-  const delays = [0, 200, 400, 800, 1600, 3200]
-  for (const d of delays) {
-    if (d > 0) await new Promise((r) => setTimeout(r, d))
-    try {
-      const r = await fetch(`${publicBase}/${key}`, { method: 'HEAD' })
-      if (r.ok) return { visible: true, waitedMs: Date.now() - start }
-      // Anything other than 404 is "weird but reachable" — bail out
-      // and let the client deal with it; we don't want to spin
-      // through a 5xx outage.
-      if (r.status !== 404) return { visible: true, waitedMs: Date.now() - start }
-    } catch {
-      // Fetch threw — DNS hiccup, CORS, whatever. Retry on the
-      // next tick rather than failing.
-    }
-  }
-  return { visible: false, waitedMs: Date.now() - start }
-}
 
 export default defineEventHandler(async (event) => {
   const formData = await readMultipartFormData(event)
@@ -65,12 +37,11 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const env = getCfEnv(event)
-  const uploads = env.UPLOADS
-  if (!uploads) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
     return {
       success: false,
-      message: 'R2 UPLOADS binding is not configured',
+      message:
+        'BLOB_READ_WRITE_TOKEN 未配置。请在 Vercel 项目环境变量（或本地 .env）中设置 Vercel Blob 的读写令牌。',
       filename: '',
     }
   }
@@ -83,41 +54,21 @@ export default defineEventHandler(async (event) => {
   const key = `${filename}.${filetype}`
 
   try {
-    await uploads.put(key, file.data, {
-      httpMetadata: { contentType: file.type || 'application/octet-stream' },
+    await put(key, file.data as unknown as BodyInit, {
+      access: 'public',
+      contentType: file.type || 'application/octet-stream',
+      // key 是 short-uuid，天然不冲突；关掉随机后缀保证 pathname 与
+      // DB 里存的 /upload/<key> 一一对应（重复上传同 key 即覆盖）。
+      addRandomSuffix: false,
     })
   } catch (e) {
-    // 之前只 console.log 错误,接口返「上传文件失败」无任何细节,
-    // 排查只能去 worker 日志翻。把真实错误 message 透出来 ——
-    // R2Bucket.put 的 shim 抛 'R2 put 4xx/5xx',直接看 status
-    // 就能定位是 quota / bucket-not-found / proxy-down 哪一种。
     const reason = e instanceof Error ? e.message : String(e)
-    console.log('R2 put error:', reason)
+    console.log('Vercel Blob put error:', reason)
     return {
       success: false,
       message: `上传文件失败: ${reason}`,
       filename: '',
     }
-  }
-
-  // R2 propagation guard — see waitForR2Propagation docstring above
-  // for why this exists. Read base URL from runtimeConfig (public
-  // side has the URL even when the worker env doesn't seed
-  // process.env).
-  const publicBase =
-    (env.R2_PUBLIC_BASE_URL as string | undefined)
-    || (useRuntimeConfig().public?.r2PublicBaseUrl as string | undefined)
-    || ''
-  const propagation = await waitForR2Propagation(
-    publicBase.replace(/\/+$/, ''),
-    key,
-  )
-  if (!propagation.visible) {
-    // Object is in the bucket; the public hostname just hasn't seen
-    // it yet. Log this so we can spot if our timeout is too tight.
-    console.log(
-      `R2 public propagation timeout (${propagation.waitedMs}ms) for ${key}`,
-    )
   }
 
   return {

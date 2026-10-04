@@ -6,7 +6,7 @@
 // legacy player shape. Protected stream/artwork/lyrics links are rewritten
 // through this proxy, keeping METING_TOKEN on the server.
 import { inArray } from 'drizzle-orm'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { systemConfig } from '~/lib/db/schema'
 import {
   buildMetingV1Url,

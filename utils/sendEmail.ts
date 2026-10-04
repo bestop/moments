@@ -1,8 +1,9 @@
-// Outbound email via SMTP, using `worker-mailer` so it runs on the Workers /
-// Pages runtime (which can't load nodemailer because nodemailer needs Node's
-// `net`/`tls` modules — workerd's unenv polyfills don't cover those deeply
-// enough). worker-mailer talks SMTP directly over Cloudflare's `connect()`
-// API.
+// Outbound email via SMTP, using nodemailer on the Vercel Node runtime.
+//
+// (The Cloudflare deployment previously used `worker-mailer` because the
+// Workers runtime can't load nodemailer's Node net/tls deps — that
+// restriction disappears on Vercel, so we switch back to the battle-tested
+// nodemailer, which also restores parity with the pre-migration upstream.)
 //
 // SMTP credentials live in the `Config` table (id=1), set via the admin UI:
 //   - mailHost / mailPort / mailSecure (1 = direct TLS port 465; 0 = STARTTLS port 587)
@@ -10,12 +11,13 @@
 //   - mailFrom (sender address) / mailName (display name)
 // `Config.enableEmail` is the master gate.
 //
-// Cloudflare blocks outbound port 25 permanently, so use 465 (TLS) or 587
-// (STARTTLS) on your SMTP server.
+// Vercel Node functions allow arbitrary outbound TCP, so both 465 (TLS) and
+// 587 (STARTTLS) work. Popular options: QQ/163 mail SMTP, Gmail, Resend SMTP,
+// Mailgun SMTP, etc.
 import type { H3Event } from 'h3'
+import nodemailer from 'nodemailer'
 import { eq } from 'drizzle-orm'
-import { WorkerMailer } from 'worker-mailer'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { config as configTable } from '~/lib/db/schema'
 
 type SendEmailOptions = {
@@ -63,34 +65,30 @@ export async function sendEmail(
   // mailSecure = 0 means plain socket + STARTTLS upgrade (port 587).
   const useSecure = !!siteConfig.mailSecure
 
-  let mailer: WorkerMailer | null = null
   try {
-    mailer = await WorkerMailer.connect({
-      credentials: { username, password },
-      authType: 'plain',
+    const transporter = nodemailer.createTransport({
       host,
       port,
       secure: useSecure,
-      startTls: !useSecure,
+      auth: { user: username, pass: password },
+      // 连接池对 serverless 意义不大（实例随时回收），关闭以减少状态。
+      pool: false,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
     })
 
-    await mailer.send({
-      from: { name: fromName, email: fromAddress },
-      to: { email: options.email },
+    const info = await transporter.sendMail({
+      from: `"${fromName}" <${fromAddress}>`,
+      to: options.email,
       subject: options.subject,
       html: options.message,
       text: stripHtml(options.message),
     })
 
-    return { success: true }
+    return { success: true, messageId: info?.messageId }
   } catch (e: any) {
     return { success: false, error: e?.message ?? String(e) }
-  } finally {
-    try {
-      await mailer?.close()
-    } catch {
-      // ignore close errors
-    }
   }
 }
 

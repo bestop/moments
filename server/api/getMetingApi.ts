@@ -1,5 +1,5 @@
 import { eq, inArray } from 'drizzle-orm'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { systemConfig } from '~/lib/db/schema'
 import { normaliseMetingVersion } from '~/server/utils/meting'
 

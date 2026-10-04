@@ -36,3 +36,9 @@ public/upload
 
 # Node V8 compile cache
 node-compile-cache
+
+# Vercel migration: local SQLite + Vercel CLI state
+local.db
+local.db-*
+.vercel
+.dev.vars

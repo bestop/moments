@@ -4,7 +4,7 @@
 import { eq, or } from 'drizzle-orm'
 import { signToken, getJwtExpiresInSeconds } from '~/lib/auth/jwt'
 import { hashPassword, verifyPassword } from '~/lib/auth/password'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { users } from '~/lib/db/schema'
 
 type loginReq = {

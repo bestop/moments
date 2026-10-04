@@ -8,7 +8,7 @@
 import { and, desc, eq } from 'drizzle-orm'
 import { aliTextJudge } from '~/utils/aliTextJudge'
 import { sendEmail } from '~/utils/sendEmail'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { pushToUser } from '~/lib/push'
 import { config as configTable, memos, systemConfig, users } from '~/lib/db/schema'
 

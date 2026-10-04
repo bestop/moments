@@ -1,5 +1,5 @@
 import { asc, eq } from 'drizzle-orm'
-import { useDb } from '~/lib/db/d1'
+import { useDb } from '~/lib/db'
 import { comments } from '~/lib/db/schema'
 
 type GetCommentReq = {

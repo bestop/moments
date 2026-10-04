@@ -1,22 +1,22 @@
-// JWT signing/verification for the Cloudflare deployment.
+// JWT signing/verification for the Vercel deployment.
 //
 // Uses `@tsndr/cloudflare-worker-jwt`, a tiny HS256 implementation that
 // runs on Web Crypto (so the same source works on Cloudflare Workers,
-// Pages Functions, and Node 19+).
+// Pages Functions, and Node 19+ — the Vercel Node runtime included).
 //
 // Secret resolution order, per request:
-//   1. `env.JWT_SECRET` from wrangler vars/secrets (.dev.vars locally,
-//      `wrangler pages secret put JWT_SECRET` in prod).
+//   1. `process.env.JWT_SECRET` from Vercel project env vars
+//      (or `.env` locally).
 //   2. Fallback: `SystemConfig` row keyed `jwtKey` — preserves
-//      compatibility with pre-migration MySQL data so tokens minted
+//      compatibility with pre-migration data so tokens minted
 //      before the cutover keep verifying. Generated and persisted on
 //      first miss so the secret survives across requests.
 
 import jwt from '@tsndr/cloudflare-worker-jwt'
 import { eq } from 'drizzle-orm'
 import type { H3Event } from 'h3'
-import { getCfEnv } from '~/lib/cf-env'
-import { useDb } from '~/lib/db/d1'
+import { getEnv } from '~/lib/env'
+import { useDb } from '~/lib/db'
 import { systemConfig } from '~/lib/db/schema'
 
 const SYSTEM_CONFIG_JWT_KEY = 'jwtKey'
@@ -78,13 +78,13 @@ async function loadOrCreateJwtKeyInDb(event: H3Event): Promise<string> {
   return fresh
 }
 
-function getEnv(event: H3Event): Record<string, unknown> | undefined {
-  return getCfEnv(event) as Record<string, unknown>
+function getServerEnv(_event: H3Event): Record<string, unknown> {
+  return process.env as Record<string, unknown>
 }
 
 /** Resolve the active JWT signing secret for this request. */
 export async function getJwtSecret(event: H3Event): Promise<string> {
-  const env = getEnv(event)
+  const env = getServerEnv(event)
   const fromEnv = env?.JWT_SECRET
   if (typeof fromEnv === 'string' && fromEnv.length > 0) return fromEnv
   return loadOrCreateJwtKeyInDb(event)
@@ -92,7 +92,7 @@ export async function getJwtSecret(event: H3Event): Promise<string> {
 
 /** Resolve the configured token lifetime, defaulting to 24h. */
 export function getJwtExpiresInSeconds(event: H3Event): number {
-  const env = getEnv(event)
+  const env = getServerEnv(event)
   const raw = env?.JWT_EXPIRES_IN
   if (typeof raw === 'string' && raw.length > 0) {
     try {
