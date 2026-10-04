@@ -65,6 +65,12 @@ export default defineEventHandler(async (event) => {
     reToken,
   } = (await readBody(event)) as SaveCommentReq
 
+  // PG 不像 SQLite 那样宽松：integer 列与空串比较会直接报错
+  // （invalid input syntax for type integer）。客户端可能把“无回复”
+  // 序列化成 ""，统一在这里规范化成数字 0，对齐旧 SQLite 语义。
+  const memoIdNum = Number(memoId) || 0
+  const replyToIdNum = Number(replyToId) || 0
+
   if (content.length > 500) {
     return { success: false, message: '评论内容长度不能超过500个字符' }
   }
@@ -175,7 +181,7 @@ export default defineEventHandler(async (event) => {
       atpeople: memos.atpeople,
     })
     .from(memos)
-    .where(eq(memos.id, memoId))
+    .where(eq(memos.id, memoIdNum))
     .limit(1)
   const memo = memoRows[0] ?? null
 
@@ -197,15 +203,15 @@ export default defineEventHandler(async (event) => {
   await db.insert(comments).values({
     content,
     replyTo: replyTo ?? null,
-    memoId,
+    memoId: memoIdNum,
     username,
     email: email ?? null,
     website: website ?? null,
     author:
       ctxUserId !== undefined ? (ctxUserId === memo?.userId ? 1 : 2) : 0,
-    replyToUser: replyToId || 0,
+    replyToUser: replyToIdNum,
     linkedUser: ctxUserId || 0,
-    replyToId: replyToId || 0,
+    replyToId: replyToIdNum,
     createdAt: now,
     updatedAt: now,
   })
@@ -217,11 +223,11 @@ export default defineEventHandler(async (event) => {
     const notificationList: string[] = []
     notificationList.push(email || '')
 
-    if (replyToId !== undefined && replyToId !== 0) {
+    if (replyToIdNum !== 0) {
       const commentRows = await db
         .select()
         .from(comments)
-        .where(eq(comments.id, replyToId))
+        .where(eq(comments.id, replyToIdNum))
         .limit(1)
       const replied = commentRows[0] ?? null
       if (
@@ -244,7 +250,7 @@ export default defineEventHandler(async (event) => {
           pushTargets.set(replied.linkedUser, {
             title: `${username} 回复了你的评论`,
             body: content.slice(0, 80),
-            tag: `reply-${memoId}-${replyToId}`,
+            tag: `reply-${memoIdNum}-${replyToIdNum}`,
           })
         }
         let tmpmsg = `您在moments中的评论有新回复！用户名为:  ${username} 回复了您的评论(${replied.content})，他回复道: ${content}，点击查看: ${siteUrl}/detail/${memoId}`
