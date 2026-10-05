@@ -172,39 +172,51 @@
 
     <template v-if="state.enableEmail">
       <div class="config-container">
-        <div class="flex flex-col gap-2 qus-box">
-          <Label for="mailHost" class="font-bold">邮局服务器地址</Label>
-          <Input type="text" id="mailHost" placeholder="邮局服务器地址" autocomplete="off" v-model="state.mailHost" />
+        <div class="field-hint field-hint-block">
+          邮件通过 Resend 发送：API Key 配置在环境变量 <code>RESEND_API_KEY</code>（Vercel 项目 Settings → Environment Variables）；
+          发件域名需先在 Resend 控制台 Domains → Add Domain 完成 DNS 验证。下方只需填写发件人地址与显示名，
+          旧 SMTP（邮局服务器）字段在 Resend 模式下不使用，可留空。
         </div>
 
         <div class="flex flex-col gap-2 qus-box">
-          <Label for="email" class="font-bold">邮局服务器端口</Label>
-          <Input type="number" id="mailPort" placeholder="邮局服务器端口" autocomplete="off" v-model="state.mailPort" />
+          <Label for="mailFrom" class="font-bold">发件人地址 (mailFrom)</Label>
+          <Input type="text" id="mailFrom" placeholder="no-reply@your-domain.com（须为 Resend 已验证域名）" autocomplete="off" v-model="state.mailFrom" />
+          <div class="field-hint">
+            必须是 Resend 已验证域名下的邮箱地址，如 no-reply@your-domain.com；
+            快速测试可先用 Resend 沙箱地址 onboarding@resend.dev（仅能发给你 Resend 账号自己的邮箱）。
+          </div>
         </div>
 
         <div class="flex flex-col gap-2 qus-box">
-          <Label for="mailSecure" class="font-bold">邮局安全连接</Label>
+          <Label for="mailName" class="font-bold">发件人显示名 (mailName)</Label>
+          <Input type="text" id="mailName" placeholder="收件箱里显示的名字，默认 Moments" autocomplete="off" v-model="state.mailName" />
+        </div>
+
+        <div class="field-hint field-hint-block">以下为旧版 SMTP 邮局字段，Resend 模式下不使用，可全部留空。</div>
+
+        <div class="flex flex-col gap-2 qus-box">
+          <Label for="mailHost" class="font-bold">邮局服务器地址（已废弃）</Label>
+          <Input type="text" id="mailHost" placeholder="旧版 SMTP 服务器地址，可留空" autocomplete="off" v-model="state.mailHost" />
+        </div>
+
+        <div class="flex flex-col gap-2 qus-box">
+          <Label for="email" class="font-bold">邮局服务器端口（已废弃）</Label>
+          <Input type="number" id="mailPort" placeholder="旧版 SMTP 端口，可留空" autocomplete="off" v-model="state.mailPort" />
+        </div>
+
+        <div class="flex flex-col gap-2 qus-box">
+          <Label for="mailSecure" class="font-bold">邮局安全连接（已废弃）</Label>
           <Switch id="mailSecure" v-model:checked="state.mailSecure" />
         </div>
 
         <div class="flex flex-col gap-2 qus-box">
-          <Label for="mailUser" class="font-bold">邮局用户名</Label>
-          <Input type="text" id="mailUser" placeholder="邮局用户名，一般同邮局发件人" autocomplete="off" v-model="state.mailUser" />
+          <Label for="mailUser" class="font-bold">邮局用户名（已废弃）</Label>
+          <Input type="text" id="mailUser" placeholder="旧版 SMTP 用户名，可留空" autocomplete="off" v-model="state.mailUser" />
         </div>
 
         <div class="flex flex-col gap-2 qus-box">
-          <Label for="mailPass" class="font-bold">邮局密码</Label>
-          <Input type="text" id="mailPass" placeholder="邮局密码" autocomplete="off" v-model="state.mailPass" />
-        </div>
-
-        <div class="flex flex-col gap-2 qus-box">
-          <Label for="mailFrom" class="font-bold">邮局发件人</Label>
-          <Input type="text" id="mailFrom" placeholder="邮局发件人，一般同邮局用户名" autocomplete="off" v-model="state.mailFrom" />
-        </div>
-
-        <div class="flex flex-col gap-2 qus-box">
-          <Label for="mailName" class="font-bold">邮局发件人名</Label>
-          <Input type="text" id="mailName" placeholder="邮局发件人名" autocomplete="off" v-model="state.mailName" />
+          <Label for="mailPass" class="font-bold">邮局密码（已废弃）</Label>
+          <Input type="text" id="mailPass" placeholder="旧版 SMTP 密码，可留空" autocomplete="off" v-model="state.mailPass" />
         </div>
 
         <div class="flex flex-col gap-2 qus-box">
@@ -561,6 +573,27 @@ const saveConfig = async () => {
 }
 .qus-box{
   margin-bottom: 10px;
+}
+
+.field-hint {
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.65;
+  margin-top: 2px;
+}
+
+.field-hint-block {
+  margin-top: 4px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-left: 3px solid #999;
+  background: rgba(127, 127, 127, 0.08);
+  border-radius: 4px;
+}
+
+.field-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
 }
 
 .circle {
