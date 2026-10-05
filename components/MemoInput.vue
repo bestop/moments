@@ -151,12 +151,15 @@
       <div class="flex flex-row justify-between items-center gap-2 memo-info-list">
         <div class="text-sm flex flex-row gap-1 flex-1 items-center">
           <Popover>
-            <PopoverTrigger style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-              <div style="display: flex; align-items: center;">
-                <svg t="1715337116609" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="4287" width="32" height="32"><path d="M512 427.023m-90 0a90 90 0 1 0 180 0 90 90 0 1 0-180 0Z" fill="#2c2c2c" p-id="4288"></path><path d="M512 910.402c-19.14 0-37.482-5.854-53.042-16.929-14.063-10.01-24.926-23.596-31.589-39.46L255.043 585.177l-0.154-0.25C225.522 537.209 210 482.605 210 427.021c0-80.667 31.414-156.506 88.454-213.546S431.333 125.021 512 125.021s156.506 31.414 213.546 88.454C782.587 270.515 814 346.354 814 427.021c0 55.849-15.655 110.671-45.274 158.539l-0.264 0.419-172.081 268.716c-6.755 15.726-17.66 29.176-31.704 39.055-15.485 10.895-33.7 16.652-52.677 16.652zM309.246 551.141l175.494 273.78 1.194 3.197c4.149 11.107 14.381 18.284 26.066 18.284 11.584 0 21.791-7.071 26.004-18.015l1.165-3.028L714.43 551.678C737.701 513.983 750 470.884 750 427.021c0-63.572-24.756-123.339-69.709-168.292-44.952-44.951-104.719-69.708-168.291-69.708s-123.339 24.756-168.292 69.708S274 363.449 274 427.021c0 43.64 12.186 86.552 35.246 124.12z" fill="#2c2c2c" p-id="4289"></path></svg>
-                <div class="text-sm cursor-pointer">所在位置</div>
-              </div>
-              <div class="text-[#576b95] text-sm cursor-pointer">{{ fmtLocation }}</div>
+            <PopoverTrigger class="w-full flex items-center justify-between gap-2 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-neutral-400/50">
+              <span class="flex items-center gap-2 text-neutral-700 dark:text-neutral-300">
+                <MapPin class="w-4 h-4 shrink-0 opacity-75" />
+                <span class="text-sm">所在位置</span>
+              </span>
+              <span class="flex items-center gap-0.5 text-sm text-[#576b95] dark:text-[#8aa8d8]">
+                {{ fmtLocation }}
+                <ChevronRight class="w-3.5 h-3.5 opacity-50" />
+              </span>
             </PopoverTrigger>
             <PopoverContent class="w-auto">
               <div class="flex flex-row gap-2 text-sm">
@@ -176,12 +179,15 @@
       <div class="flex flex-row justify-between items-center gap-2 memo-info-list">
         <div class="text-sm flex flex-row gap-1 flex-1 items-center">
           <Popover>
-            <PopoverTrigger style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-                <div style="display: flex; align-items: center;">
-                  <svg t="1715337381411" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="6551" width="32" height="32"><path d="M597.696 426.944c-0.032 1.28-0.896 8.128-9.344 41.952l-22.304 84.384c-7.136 24.96-22.624 47.68-46.144 67.52-24.992 21.44-50.336 32.32-75.36 32.32-21.952 0-38.848-7.584-51.872-23.456-12.32-14.016-18.592-34.432-18.592-60.672 0-61.12 17.44-112.704 51.776-153.184l0.16-0.192c31.776-39.104 67.712-58.08 109.952-58.08 19.616 0 34.4 7.616 45.536 23.776 10.88 14.304 16.192 29.28 16.192 45.632m277.696 248.416a11.2 11.2 0 0 0-9.76-5.728h-53.504a11.2 11.2 0 0 0-9.12 4.704c-27.36 38.56-64.32 70.112-109.664 93.76-52.608 26.272-114.72 39.616-184.64 39.616-91.264 0-165.888-26.464-221.76-78.56-56.384-53.952-84.992-129.76-84.992-225.28 0-89.184 29.632-163.712 88.192-221.632 57.824-58.464 131.68-88.064 219.52-88.064 82.208 0 149.312 24.448 199.264 72.544C755.776 313.6 779.52 372.416 779.52 441.6c0 58.72-17.856 111.04-52.896 155.328-30.08 36.64-59.52 55.2-87.616 55.2-17.472 0-18.944-7.136-18.944-15.04 0-14.304 3.424-31.776 10.336-52.576L700.448 320a11.2 11.2 0 0 0-10.816-14.048h-48.64a11.2 11.2 0 0 0-10.784 8.16l-7.744 27.296c-19.584-35.808-50.88-53.92-93.312-53.92-60.896 0-114.496 27.2-159.136 80.64-47.04 53.696-70.848 120.96-70.848 199.904 0 43.52 13.088 80.064 38.72 108.512 25.504 28.992 60.384 43.712 103.776 43.712 45.504 0 86.176-18.464 121.152-54.912 11.648 43.072 44.128 52.928 71.36 52.928 51.296 0 99.712-27.52 144.064-82.144 44.768-58.144 67.456-123.584 67.456-194.528 0-88.864-29.216-163.168-86.88-220.8C697.92 159.168 615.04 128 512.64 128c-110.88 0-203.84 37.12-276.256 110.176C164.48 308.8 128 397.536 128 501.92c0 110.88 35.52 201.6 105.6 269.696 69.92 66.56 162.464 100.32 275.136 100.32 79.872 0 153.216-16.768 218.016-49.824 63.2-31.936 113.12-77.504 148.416-135.456a11.168 11.168 0 0 0 0.224-11.296" fill="#3E3A39" p-id="6552"></path></svg>
-                  <div class="text-sm cursor-pointer">提醒谁看</div>
-                </div>
-                <div class="text-[#576b95] text-sm cursor-pointer">{{ fmtAite }}</div>
+            <PopoverTrigger class="w-full flex items-center justify-between gap-2 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-neutral-400/50">
+              <span class="flex items-center gap-2 text-neutral-700 dark:text-neutral-300">
+                <AtSign class="w-4 h-4 shrink-0 opacity-75" />
+                <span class="text-sm">提醒谁看</span>
+              </span>
+              <span class="flex items-center gap-0.5 text-sm text-[#576b95] dark:text-[#8aa8d8] min-w-0">
+                <span class="truncate">{{ fmtAite }}</span>
+                <ChevronRight class="w-3.5 h-3.5 opacity-50 shrink-0" />
+              </span>
             </PopoverTrigger>
             <PopoverContent class="w-80">
               <div class="flex flex-row gap-2 text-sm">
@@ -249,12 +255,15 @@
       <div class="flex flex-row justify-between items-center gap-2 memo-info-list">
         <div class="text-sm flex flex-row gap-1 flex-1 items-center">
           <Popover>
-            <PopoverTrigger style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-              <div style="display: flex; align-items: center;">
-                <svg t="1715415328668" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="4310" width="32" height="32"><path d="M652.8 534.4C723.2 489.6 768 409.6 768 320c0-140.8-115.2-256-256-256S256 179.2 256 320c0 89.6 44.8 169.6 115.2 214.4C192 592 64 761.6 64 960h64c0-211.2 172.8-384 384-384s384 172.8 384 384h64c0-198.4-128-368-307.2-425.6zM512 512c-105.6 0-192-86.4-192-192s86.4-192 192-192 192 86.4 192 192-86.4 192-192 192z" fill="#333333" p-id="4311"></path></svg>
-                <div class="text-sm cursor-pointer">谁可以看</div>
-              </div>
-              <div class="text-[#576b95] text-sm cursor-pointer">{{ fmtAvailable }}</div>
+            <PopoverTrigger class="w-full flex items-center justify-between gap-2 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-neutral-400/50">
+              <span class="flex items-center gap-2 text-neutral-700 dark:text-neutral-300">
+                <User class="w-4 h-4 shrink-0 opacity-75" />
+                <span class="text-sm">谁可以看</span>
+              </span>
+              <span class="flex items-center gap-0.5 text-sm text-[#576b95] dark:text-[#8aa8d8] min-w-0">
+                <span class="truncate">{{ fmtAvailable }}</span>
+                <ChevronRight class="w-3.5 h-3.5 opacity-50 shrink-0" />
+              </span>
             </PopoverTrigger>
             <PopoverContent class="w-80">
               <div class="flex flex-row gap-2 text-sm">
@@ -319,8 +328,6 @@
           </Popover>
         </div>
       </div>
-      <div class="flex flex-row justify-between items-center gap-2 memo-info-list" style="">
-      </div>
     </div>
   </div>
 </template>
@@ -332,7 +339,7 @@ import { Button } from '@/components/ui/button'
 import { memoUpdateEvent, memoAddEvent } from '@/lib/event'
 import type { Memo } from '~/lib/types';
 import { useAnimate } from '@vueuse/core';
-import { Image, Music4, Trash2, Link, CircleX, Check } from 'lucide-vue-next'
+import { Image, Music4, Trash2, Link, CircleX, Check, MapPin, AtSign, User, ChevronRight } from 'lucide-vue-next'
 import { ref } from 'vue';
 import {toast} from "vue-sonner";
 import {
@@ -891,10 +898,10 @@ const judgeAtSafty = () => {
   border: transparent 1px solid;
 }
 .memo-info-list{
-  border-top: 1px solid grey;
-  border-bottom: none; border-left: none;
-  border-right: none;
-  padding: 5px;
+  border-top: 1px solid rgba(0, 0, 0, .06);
+}
+.dark .memo-info-list{
+  border-top-color: rgba(255, 255, 255, .08);
 }
 img{
   pointer-events: none;
