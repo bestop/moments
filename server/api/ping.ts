@@ -1,7 +1,9 @@
+import { rateLimitHealth } from '../utils/guard'
 
 export default defineEventHandler(async () => {
     return {
         success: true,
-        message: "pong"
+        message: "pong",
+        rateLimit: rateLimitHealth(),
     }
 });
