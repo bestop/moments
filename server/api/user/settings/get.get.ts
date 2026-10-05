@@ -115,7 +115,7 @@ export default defineEventHandler(async (event) => {
       await db.insert(configTable).values({
         enableS3: false,
         favicon: '/favicon.ico',
-        title: 'Randall的小屋',
+        title: 'Moments',
         css: '',
         js: '',
         beianNo: '',

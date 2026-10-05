@@ -8,7 +8,6 @@
       <div>这是一个基于Vue3/Nuxt3的开源项目，用于朋友圈、留言板等功能。</div>
       <div>本项目Fork自大佬<a href="https://github.com/kingwrcy" target="_blank">kingwrcy</a>的<a href="https://github.com/kingwrcy/moments" target="_blank">moments</a></div>
       <div>项目地址：<a href="https://github.com/RandallAnjie/moments" target="_blank">https://github.com/RandallAnjie/moments</a></div>
-      <div>项目演示：<a href="https://moments.randallanjie.com/" target="_blank">https://moments.randallanjie.com/</a></div>
       更新日志:
       <br/>
       ·V0.1.0 2024-04-22 创建模板
@@ -69,7 +68,6 @@
       <br/>
       ·V0.4.6 开发中... 适配websocket中
     </div>
-    <div onclick="window.open('https://randallanjie.com/', '_blank');">Powered By Randall</div>
   </div>
 </div>
 </template>
