@@ -86,7 +86,7 @@ export default defineEventHandler(async (event) => {
         updatedAt: now,
         enableS3: false,
         title: 'admin',
-        eMail: 'example@randallanjie.com',
+        eMail: 'example@abc.com',
       })
       const reReadUser = await db
         .select({
