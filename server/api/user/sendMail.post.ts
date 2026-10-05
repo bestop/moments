@@ -18,6 +18,8 @@ type sendMailReq = {
 }
 
 export default defineEventHandler(async (event) => {
+  // 发信烧 Resend 配额：每 IP 每小时最多 5 次（原有的按邮箱 5 分钟一封逻辑不变）
+  await rateLimit(event, 'sendmail', 5, 3600)
   let { email, action } = (await readBody(event)) as sendMailReq
   let userid = 0
 

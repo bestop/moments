@@ -39,6 +39,13 @@ export default defineEventHandler(async (event) => {
   if (!Number.isFinite(userIdFilter) || userIdFilter <= 0) {
     userIdFilter = undefined
   }
+  // 分页参数规范化：非法/越界值回退第 1 页，避免 NaN 进 OFFSET 打出 PG 500
+  const pageNum = Math.max(
+    1,
+    Number.isFinite(Number(page)) && page !== undefined && page !== null
+      ? Math.trunc(Number(page))
+      : 1,
+  )
 
   const db = useDb(event)
 
@@ -81,7 +88,7 @@ export default defineEventHandler(async (event) => {
       .where(and(eq(memos.userId, userIdFilter), availableFilter))
       .orderBy(desc(memos.pinned), desc(memos.createdAt))
       .limit(fetchLimit)
-      .offset((page - 1) * size)
+      .offset((pageNum - 1) * size)
     hasNext = rows.length > size
     rawMemos = rows.slice(0, size)
   } else {
@@ -97,7 +104,7 @@ export default defineEventHandler(async (event) => {
         desc(memos.createdAt),
       )
       .limit(fetchLimit)
-      .offset((page - 1) * size)
+      .offset((pageNum - 1) * size)
     hasNext = rows.length > size
     rawMemos = rows.slice(0, size)
   }
@@ -140,7 +147,12 @@ export default defineEventHandler(async (event) => {
     // 标识符全部由 drizzle 表对象渲染（带引号、大小写敏感），不要手写裸表名。
     const res = (await db.execute(sql`
       WITH ranked AS (
-        SELECT *,
+        -- 显式列清单：email 是 PII（评论预览随列表下发给所有访客），不外发；
+        -- website 保留（Comment 组件展示评论者站点链接需要）。
+        SELECT ${comments.id}, ${comments.content}, ${comments.replyTo},
+               ${comments.username}, ${comments.website}, ${comments.createdAt},
+               ${comments.updatedAt}, ${comments.memoId}, ${comments.author},
+               ${comments.replyToUser}, ${comments.linkedUser}, ${comments.replyToId},
                ROW_NUMBER() OVER (PARTITION BY ${comments.memoId} ORDER BY ${comments.createdAt} ASC) AS rn,
                COUNT(*)     OVER (PARTITION BY ${comments.memoId})                        AS total
         FROM ${comments}

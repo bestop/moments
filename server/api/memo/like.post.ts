@@ -14,12 +14,16 @@ export default defineEventHandler(async (event) => {
   }
   // PG 严格类型：integer 列不接受空串比较，统一规范化（对齐 SQLite 语义）
   const memoIdNum = Number(memoId) || 0
+  // 每 IP 限流：无认证接口，防止脚本化刷赞造成写放大
+  await rateLimit(event, 'like', 30, 60)
+
   const delta = like ? 1 : -1
   const db = useDb(event)
   const updated = await db
     .update(memos)
     .set({
-      favCount: sql`${memos.favCount} + ${delta}`,
+      // GREATEST 兜底：取消点赞不会把计数打成负数
+      favCount: sql`GREATEST(${memos.favCount} + ${delta}, 0)`,
       updatedAt: new Date().toISOString(),
     })
     .where(eq(memos.id, memoIdNum))

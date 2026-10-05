@@ -1,6 +1,9 @@
+import { randomBytes } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { useDb } from '~/lib/db'
 import { users, config as configTable, systemConfig } from '~/lib/db/schema'
+import { hashPassword } from '~/lib/auth/password'
+import { SECRET_SYSTEM_CONFIG_KEYS } from '../../../utils/config'
 
 type UserPublic = {
   nickname: string | null
@@ -71,14 +74,19 @@ export default defineEventHandler(async (event) => {
   if (!userData || !configData) {
     if (!userData && userId === 1) {
       const now = new Date().toISOString()
-      // Legacy bcrypt hash of "admin" — verifyPassword falls back to bcryptjs and
-      // transparently re-hashes to PBKDF2 on the first successful login.
-      const defaultPasswordHash =
-        '$2a$10$J0SQQJcEAg4jQGZNCPHndu.Ehh6EZQxjhvuPkhJTpPBMqtFStbCYm'
+      // 不再播种固定弱口令 admin/admin：优先取 ADMIN_INITIAL_PASSWORD 环境变量
+      //（至少 8 位），否则生成随机密码并打印到部署日志一次。新实例不再带着
+      // 公开的默认口令上线。
+      const envPassword = process.env.ADMIN_INITIAL_PASSWORD?.trim()
+      const initialPassword =
+        envPassword && envPassword.length >= 8
+          ? envPassword
+          : randomBytes(12).toString('base64url')
+      const passwordHash = await hashPassword(initialPassword)
       await db.insert(users).values({
         username: 'admin',
         nickname: 'admin',
-        password: defaultPasswordHash,
+        password: passwordHash,
         avatarUrl: '/avatar.webp',
         slogan: '这个人很懒，什么都没有留下',
         coverUrl: '/cover.webp',
@@ -88,6 +96,15 @@ export default defineEventHandler(async (event) => {
         title: 'admin',
         eMail: 'example@abc.com',
       })
+      console.log(
+        '[bootstrap] created admin user "admin" with initial password:',
+        initialPassword,
+      )
+      if (!envPassword) {
+        console.log(
+          '[bootstrap] ADMIN_INITIAL_PASSWORD not set — copy the random password above now, and change it after first login.',
+        )
+      }
       const reReadUser = await db
         .select({
           nickname: users.nickname,
@@ -114,7 +131,7 @@ export default defineEventHandler(async (event) => {
     if (!configData) {
       await db.insert(configTable).values({
         enableS3: false,
-        favicon: '/favicon.ico',
+        favicon: '/favicon.png',
         title: 'Moments',
         css: '',
         js: '',
@@ -143,11 +160,19 @@ export default defineEventHandler(async (event) => {
     .from(systemConfig)
     .where(eq(systemConfig.type, 1))
 
+  // 该接口无需登录、每个页面都会调用：type=1 的 secret（metingToken 等）
+  // 绝不能随响应下发到浏览器（对齐 site/config/get 的公开分支过滤逻辑）。
+  const publicSystemConfig = Object.fromEntries(
+    systemConfigRows
+      .filter((item) => !SECRET_SYSTEM_CONFIG_KEYS.has(item.key))
+      .map((item) => [item.key, item.value]),
+  )
+
   const data = {
     ...(userData ?? {}),
     ...(configData ?? {}),
     isadmin: event.context.userId === 1,
-    ...Object.fromEntries(systemConfigRows.map((item) => [item.key, item.value])),
+    ...publicSystemConfig,
   }
 
   return {

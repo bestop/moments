@@ -6,7 +6,7 @@
 //     per-request inside the handler so the file is safe to bundle on Workers
 import { eq } from 'drizzle-orm'
 import { aliTextJudge } from '~/utils/aliTextJudge'
-import { sendEmail } from '~/utils/sendEmail'
+import { escapeHtml, sendEmail } from '~/utils/sendEmail'
 import { useDb } from '~/lib/db'
 import { pushToUser } from '~/lib/push'
 import type { Config } from '~/lib/db/schema'
@@ -70,6 +70,9 @@ export default defineEventHandler(async (event) => {
   // 序列化成 ""，统一在这里规范化成数字 0，对齐旧 SQLite 语义。
   const memoIdNum = Number(memoId) || 0
   const replyToIdNum = Number(replyToId) || 0
+
+  // 评论区对匿名开放：每 IP 限流（10 次 / 分钟）
+  await rateLimit(event, 'comment', 10, 60)
 
   if (content.length > 500) {
     return { success: false, message: '评论内容长度不能超过500个字符' }
@@ -179,11 +182,27 @@ export default defineEventHandler(async (event) => {
       content: memos.content,
       userId: memos.userId,
       atpeople: memos.atpeople,
+      availableForProple: memos.availableForProple,
     })
     .from(memos)
     .where(eq(memos.id, memoIdNum))
     .limit(1)
   const memo = memoRows[0] ?? null
+
+  // memo 必须存在，且私密 memo（availableForProple 非空）只允许被授权者评论
+  // ——原先不校验，知道 memoId 就能给任意/不存在的动态刷评论。
+  if (!memo) {
+    return { success: false, message: 'memo 不存在' }
+  }
+  if (memo.availableForProple && memo.availableForProple !== '') {
+    const info = memo.availableForProple.split(',')
+    if (!info.includes('#' + event.context.userId + '$')) {
+      return {
+        success: false,
+        message: '401 Unauthorized 未授权评论该内容，请登陆或者联系作者获取权限',
+      }
+    }
+  }
 
   const ctxUserId = event.context.userId as number | undefined
   if (ctxUserId) {
@@ -253,7 +272,7 @@ export default defineEventHandler(async (event) => {
             tag: `reply-${memoIdNum}-${replyToIdNum}`,
           })
         }
-        let tmpmsg = `您在moments中的评论有新回复！用户名为:  ${username} 回复了您的评论(${replied.content})，他回复道: ${content}，点击查看: ${siteUrl}/detail/${memoId}`
+        let tmpmsg = `您在moments中的评论有新回复！用户名为:  ${escapeHtml(username)} 回复了您的评论(${escapeHtml(replied.content)})，他回复道: ${escapeHtml(content)}，点击查看: ${siteUrl}/detail/${memoId}`
         const templateRows = await db
           .select()
           .from(systemConfig)
@@ -267,10 +286,10 @@ export default defineEventHandler(async (event) => {
           .replaceAll('{Sitename}', siteConfig.title ?? '')
           .replaceAll('{SiteUrl}', siteUrl)
           .replaceAll('{MemoUrl}', `${siteUrl}/detail/${memoId}`)
-          .replaceAll('{Nickname}', username)
-          .replaceAll('{Content}', content)
-          .replaceAll('{OriginalContent}', replied.content || '')
-          .replaceAll('{Memo}', memo?.content || '')
+          .replaceAll('{Nickname}', escapeHtml(username))
+          .replaceAll('{Content}', escapeHtml(content))
+          .replaceAll('{OriginalContent}', escapeHtml(replied.content || ''))
+          .replaceAll('{Memo}', escapeHtml(memo?.content || ''))
         if (siteConfig.enableEmail) {
           await sendEmail(event, {
             email: replied.email,
@@ -315,7 +334,7 @@ export default defineEventHandler(async (event) => {
             })
           }
           if (siteConfig.enableEmail) {
-            let tmpmsg = `有一条新提及您的动态！用户名为:  ${username} 的用户在提及了您的动态中发表了评论，他说: ${content}，点击查看: ${siteUrl}/detail/${memoId}`
+            let tmpmsg = `有一条新提及您的动态！用户名为:  ${escapeHtml(username)} 的用户在提及了您的动态中发表了评论，他说: ${escapeHtml(content)}，点击查看: ${siteUrl}/detail/${memoId}`
             const templateRows = await db
               .select()
               .from(systemConfig)
@@ -329,9 +348,9 @@ export default defineEventHandler(async (event) => {
               .replaceAll('{Sitename}', siteConfig.title ?? '')
               .replaceAll('{SiteUrl}', siteUrl)
               .replaceAll('{MemoUrl}', `${siteUrl}/detail/${memoId}`)
-              .replaceAll('{Nickname}', username)
-              .replaceAll('{Content}', content)
-              .replaceAll('{Memo}', memo?.content || '')
+              .replaceAll('{Nickname}', escapeHtml(username))
+              .replaceAll('{Content}', escapeHtml(content))
+              .replaceAll('{Memo}', escapeHtml(memo?.content || ''))
             await sendEmail(event, {
               email: userat.eMail,
               subject: '新提及',
@@ -372,7 +391,7 @@ export default defineEventHandler(async (event) => {
           })
         }
         if (siteConfig.enableEmail) {
-          let tmpmsg = `您的moments有新评论！用户名为:  ${username} 在您的moment中发表了评论: ${content}，点击查看: ${siteUrl}/detail/${memoId}`
+          let tmpmsg = `您的moments有新评论！用户名为:  ${escapeHtml(username)} 在您的moment中发表了评论: ${escapeHtml(content)}，点击查看: ${siteUrl}/detail/${memoId}`
           const templateRows = await db
             .select()
             .from(systemConfig)
@@ -386,9 +405,9 @@ export default defineEventHandler(async (event) => {
             .replaceAll('{Sitename}', siteConfig.title ?? '')
             .replaceAll('{SiteUrl}', siteUrl)
             .replaceAll('{MemoUrl}', `${siteUrl}/detail/${memoId}`)
-            .replaceAll('{Nickname}', username)
-            .replaceAll('{Content}', content)
-            .replaceAll('{Memo}', memo?.content || '')
+            .replaceAll('{Nickname}', escapeHtml(username))
+            .replaceAll('{Content}', escapeHtml(content))
+            .replaceAll('{Memo}', escapeHtml(memo?.content || ''))
           await sendEmail(event, {
             email: owner.eMail,
             subject: '新评论',

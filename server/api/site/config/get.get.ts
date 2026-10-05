@@ -1,6 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { useDb } from '~/lib/db'
 import { config, notifications, systemConfig } from '~/lib/db/schema'
+import { SECRET_SYSTEM_CONFIG_KEYS } from '../../../utils/config'
 
 export default defineEventHandler(async (event) => {
     const db = useDb(event)
@@ -65,13 +66,10 @@ export default defineEventHandler(async (event) => {
             .select()
             .from(systemConfig)
             .where(inArray(systemConfig.type, [1]))
-        // 公开请求绝不能拿到敏感 secret —— metingToken 是 HMAC 签名密钥,
-        // 一旦泄到前端 anyone 就能签出任意 url/pic/lrc 请求。在这里 strip。
-        // 别的 type=1 secret 同理(将来加新 secret 时往这个 set 里加)。
-        const PUBLIC_SECRET_KEYS = new Set(['metingToken'])
+        // 公开请求绝不能拿到敏感 secret —— 见 server/utils/config.ts 的统一清单。
         const publicConfig = Object.fromEntries(
             configData
-                .filter((item) => !PUBLIC_SECRET_KEYS.has(item.key))
+                .filter((item) => !SECRET_SYSTEM_CONFIG_KEYS.has(item.key))
                 .map((item) => [item.key, item.value]),
         )
         data = {

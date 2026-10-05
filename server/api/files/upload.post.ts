@@ -25,18 +25,29 @@ export default defineEventHandler(async (event) => {
     }
   }
   const file = formData[0] as FileInfo
-  // 允许 image/*（普通照片）和 video/quicktime + video/mp4（Live Photo 配套视频）
-  const isImage = file?.type?.startsWith('image/')
-  const isVideo = file?.type === 'video/quicktime'
-    || file?.type === 'video/mp4'
-    || /\.(mov|mp4|m4v)$/i.test(file?.filename || file?.name || '')
+  // 类型双校验：MIME 白名单（image/* 去掉 svg —— svg 可内嵌脚本，
+  // 经 Blob 直链打开时在独立源上执行任意 JS）+ 去掉仅凭扩展名放行的分支
+  //（否则任意内容改名 .mp4 即可绕过）。Live Photo 视频只接受标准 MIME。
+  const isImage = !!file?.type?.startsWith('image/') && file.type !== 'image/svg+xml'
+  const isVideo = file?.type === 'video/quicktime' || file?.type === 'video/mp4'
   if (!isImage && !isVideo) {
     return {
       success: false,
-      message: '只支持上传图片或视频文件',
+      message: '只支持上传图片或视频文件（不支持 SVG）',
       filename: '',
     }
   }
+  // 显式大小上限（Vercel 平台层还有 ~4.5MB body 上限，这里是提前给出友好错误）
+  if (file?.data && file.data.length > 20 * 1024 * 1024) {
+    return {
+      success: false,
+      message: '文件太大，最大支持 20MB',
+      filename: '',
+    }
+  }
+
+  // 每 用户+IP 限流：防止刷爆 Blob 存储配额
+  await rateLimit(event, 'upload', 60, 3600)
 
   // 两种凭证形态任一存在即视为已配置：
   // - BLOB_READ_WRITE_TOKEN：静态令牌（手动创建 token 或旧版连接模型）

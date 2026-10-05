@@ -7,6 +7,8 @@ type DetailMemoReq = {
 }
 
 export default defineEventHandler(async (event) => {
+  // 翻译会触发对上游翻译服务的出站请求：每 IP 限流防滥用
+  await rateLimit(event, 'translate', 20, 60)
   let { id } = (await readBody(event)) as DetailMemoReq
   if (!id) {
     return {

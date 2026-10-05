@@ -87,6 +87,16 @@ export async function sendEmail(
   }
 }
 
+/** HTML 转义：邮件模板插入用户可控文本前必须调用（防邮件 HTML 注入/钓鱼）。 */
+export function escapeHtml(input: string | null | undefined): string {
+  return (input ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function stripHtml(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, '\n')

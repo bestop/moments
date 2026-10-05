@@ -15,6 +15,8 @@ type registerReq = {
 }
 
 export default defineEventHandler(async (event) => {
+  // 注册是敏感写路径：每 IP 每小时最多 5 次
+  await rateLimit(event, 'register', 5, 3600)
   const { username, email, password, emailVerificationCode } =
     (await readBody(event)) as registerReq
 
