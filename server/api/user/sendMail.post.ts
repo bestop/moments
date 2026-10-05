@@ -154,6 +154,8 @@ export default defineEventHandler(async (event) => {
       message: '验证码已发送至您的邮箱，验证码五分钟内有效，请注意查收',
     }
   }
+  // 失败原因落日志（Vercel Functions 日志可查），同时随响应返回给前端展示
+  console.error('[sendMail] dispatch failed:', result.error)
   return {
     success: false,
     message: '验证码发送失败，请检查邮箱是否正确，或当前邮件服务异常稍后再试',

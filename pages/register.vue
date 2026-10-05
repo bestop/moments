@@ -65,7 +65,7 @@ onMounted(() => {
               document.getElementById('vcode').hidden = false;
               return '发送成功';
             } else {
-              return '发送失败: ' + data.message;
+              return '发送失败: ' + data.message + (data.error ? '（' + data.error + '）' : '');
             }
           },
           error: (error) => `发送失败: ${error.message || '未知错误'}`, // 显示具体的错误信息

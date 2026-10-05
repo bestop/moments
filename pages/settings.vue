@@ -159,7 +159,9 @@ const sendMail = async () => {
           if (data.success) {
             return '发送成功';
           } else {
-            return '发送失败: ' + data.message;
+            // error 字段是后端返回的底层失败原因（如 Resend 域名未验证），
+            // 原本只在响应体里、前端不展示，排障时只能靠 curl —— 这里直接带出来
+            return '发送失败: ' + data.message + (data.error ? '（' + data.error + '）' : '');
           }
         },
         error: (error) => `发送失败: ${error.message || '未知错误'}`, // 显示具体的错误信息
