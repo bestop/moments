@@ -50,6 +50,9 @@ onUnmounted(() => {
 })
 
 const setupObserver = () => {
+  // IntersectionObserver 只存在于浏览器：watch(immediate) 在 SSR 期间也会
+  // 触发一次，必须在这里拦住（旧代码把 watch 藏在 onMounted 里才是"安全"的）
+  if (import.meta.server) return
   observer?.disconnect()
   observer = new IntersectionObserver((entries) => {
     if (entries[0].isIntersecting) {
