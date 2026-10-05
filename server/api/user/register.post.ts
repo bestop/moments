@@ -94,7 +94,6 @@ export default defineEventHandler(async (event) => {
     coverUrl: '/cover.webp',
     slogan: '这个人很懒，什么都没有留下',
     password: passwordHash,
-    enableS3: false,
     createdAt: now,
     updatedAt: now,
   })

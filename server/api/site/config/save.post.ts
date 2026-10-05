@@ -3,14 +3,6 @@ import { useDb, type DB } from '~/lib/db'
 import { config, notifications, systemConfig } from '~/lib/db/schema'
 
 type SaveConfigsReq = {
-    enableS3: boolean,
-    domain?: string,
-    bucket?: string,
-    region?: string,
-    accessKey?: string,
-    secretKey?: string,
-    endpoint?: string,
-    thumbnailSuffix?: string,
     title?: string,
     favicon?: string,
     css?: string,
@@ -71,14 +63,8 @@ export default defineEventHandler(async (event) => {
     const assign = <K extends keyof typeof config.$inferInsert>(key: K, val: typeof config.$inferInsert[K] | undefined) => {
         if (val !== undefined) setPayload[key] = val
     }
-    assign('enableS3', data.enableS3)
-    assign('s3Domain', data.domain)
-    assign('s3Bucket', data.bucket)
-    assign('s3Region', data.region)
-    assign('s3AccessKey', data.accessKey)
-    assign('s3SecretKey', data.secretKey)
-    assign('s3Endpoint', data.endpoint)
-    assign('s3ThumbnailSuffix', data.thumbnailSuffix)
+    // S3/R2 配置列已在 Vercel + Blob 架构下废弃（应用层不再读写的死字段），
+    // DB 列暂保留以兼容历史数据导入；此处不再接受/覆写。
     assign('title', data.title)
     assign('favicon', data.favicon)
     assign('css', data.css)

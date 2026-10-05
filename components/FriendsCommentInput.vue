@@ -34,7 +34,8 @@ const showEmojiRef = ref<HTMLElement>()
 const info = useStorage('anonymous', {
   email:'',
   website:'',
-  username:''
+  username:'',
+  notifyToken:''
 })
 
 
@@ -87,6 +88,8 @@ const saveComment = async (e) => {
               success: (data) => {
                 if (data.success) {
                   content.value = '';
+                  // 服务端下发的通知凭证：存起来供首页拉自己的互动通知
+                  if (data.notifyToken) info.value.notifyToken = data.notifyToken;
                   emit('commentAdded');
                   return '评论成功';
                 } else {
@@ -128,6 +131,8 @@ const saveComment = async (e) => {
           success: (data) => {
             if (data.success) {
               content.value = '';
+              // 服务端下发的通知凭证：存起来供首页拉自己的互动通知
+              if (data.notifyToken) info.value.notifyToken = data.notifyToken;
               emit('commentAdded');
               return '评论成功';
             } else {

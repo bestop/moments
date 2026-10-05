@@ -3,7 +3,7 @@
 //   - bcrypt -> Web Crypto PBKDF2 via hashPassword()
 //   - redis -> Upstash Redis via lib/kv (key `changeEmail${newEMail}` matches sendMail.post.ts)
 import { and, eq, ne } from 'drizzle-orm'
-import { hashPassword } from '~/lib/auth/password'
+import { hashPassword, verifyPassword } from '~/lib/auth/password'
 import { useDb } from '~/lib/db'
 import { users } from '~/lib/db/schema'
 import { kvGet, kvDelete } from '~/lib/kv'
@@ -13,6 +13,7 @@ type SaveSettingsReq = {
   eMail?: string
   newEMail?: string
   password?: string
+  oldPassword?: string
   nickname?: string
   slogan?: string
   avatarUrl?: string
@@ -26,6 +27,7 @@ export default defineEventHandler(async (event) => {
   const {
     username,
     password,
+    oldPassword,
     nickname,
     avatarUrl,
     slogan,
@@ -43,7 +45,27 @@ export default defineEventHandler(async (event) => {
   const db = useDb(event)
 
   const updated: SaveSettingsReq = {}
-  if (password) updated.password = await hashPassword(password)
+  if (password) {
+    // 修改密码必须验证原密码：会话被劫持（XSS/离开锁屏）时，
+    // 攻击者不能顺手把密码改成自己的。
+    if (!oldPassword) {
+      return { success: false, message: '修改密码需要先输入原密码' }
+    }
+    const currentRows = await db
+      .select({ password: users.password })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1)
+    const current = currentRows[0]
+    if (!current) {
+      return { success: false, message: '用户不存在' }
+    }
+    const verifyResult = await verifyPassword(oldPassword, current.password)
+    if (!verifyResult.valid) {
+      return { success: false, message: '原密码错误' }
+    }
+    updated.password = await hashPassword(password)
+  }
   updated.nickname = nickname || '无名侠士'
   updated.avatarUrl = avatarUrl || '/avatar.webp'
   updated.slogan = slogan || '星垂平野阔，月涌大江流。'

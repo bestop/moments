@@ -7,6 +7,7 @@
 import { eq } from 'drizzle-orm'
 import { aliTextJudge } from '~/utils/aliTextJudge'
 import { escapeHtml, sendEmail } from '~/utils/sendEmail'
+import { notifyTokenFor } from '../../utils/notifyToken'
 import { useDb } from '~/lib/db'
 import { pushToUser } from '~/lib/push'
 import type { Config } from '~/lib/db/schema'
@@ -425,6 +426,12 @@ export default defineEventHandler(async (event) => {
         pushToUser(event, uid, { ...p, url: `/detail/${memoId}` }).catch(() => null),
       ),
     )
+  }
+
+  // 匿名评论者（未登录但留了邮箱）下发通知凭证：前端存入 localStorage，
+  // 首页拉取互动通知时必须携带，防止仅凭邮箱就能读/清他人通知。
+  if (!ctxUserId && email) {
+    return { success: true, notifyToken: await notifyTokenFor(event, email) }
   }
 
   return { success: true }

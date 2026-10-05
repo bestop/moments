@@ -246,7 +246,15 @@ const welcome = async () => {
     let siteConfig;
 
     if (anonymous && anonymous.email) {
-      siteConfig = await $fetch(`/api/site/config/get?geteventnotification=true&email=${anonymous.email}`);
+      const notifyParams = new URLSearchParams({
+        geteventnotification: 'true',
+        email: anonymous.email,
+      });
+      // 评论保存时下发的通知凭证；老访客暂无凭证则不带（服务端只是不返回互动通知）
+      if (anonymous.notifyToken) {
+        notifyParams.set('ntok', anonymous.notifyToken);
+      }
+      siteConfig = await $fetch(`/api/site/config/get?${notifyParams.toString()}`);
     } else {
       siteConfig = await $fetch('/api/site/config/get');
     }

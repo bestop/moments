@@ -92,7 +92,6 @@ export default defineEventHandler(async (event) => {
         coverUrl: '/cover.webp',
         createdAt: now,
         updatedAt: now,
-        enableS3: false,
         title: 'admin',
         eMail: 'example@abc.com',
       })
@@ -130,7 +129,6 @@ export default defineEventHandler(async (event) => {
     }
     if (!configData) {
       await db.insert(configTable).values({
-        enableS3: false,
         favicon: '/favicon.png',
         title: 'Moments',
         css: '',

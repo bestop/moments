@@ -2,6 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { useDb } from '~/lib/db'
 import { config, notifications, systemConfig } from '~/lib/db/schema'
 import { SECRET_SYSTEM_CONFIG_KEYS } from '../../../utils/config'
+import { verifyNotifyToken } from '../../../utils/notifyToken'
 
 export default defineEventHandler(async (event) => {
     const db = useDb(event)
@@ -74,7 +75,6 @@ export default defineEventHandler(async (event) => {
         )
         data = {
             notification,
-            enableS3: configRow.enableS3,
             enableRecaptcha: configRow.enableRecaptcha,
             recaptchaSiteKey: configRow.recaptchaSiteKey,
             enableTencentMap: configRow.enableTencentMap,
@@ -107,26 +107,31 @@ export default defineEventHandler(async (event) => {
                 )
         }
     } else if (geteventnotification && email) {
-        const notificationRecord = await db
-            .select()
-            .from(notifications)
-            .where(
-                and(
-                    eq(notifications.type, 1),
-                    eq(notifications.sendToEmail, email),
-                ),
-            )
-        if (notificationRecord.length > 0) {
-            data = { notificationRecord, ...data }
-            await db
-                .update(notifications)
-                .set({ type: 0 })
+        // 必须持有该邮箱的通知凭证（评论保存时下发）：防止仅凭知道邮箱
+        // 就读取/标记已读他人的互动通知（通知内含评论内容）。
+        const ntok = params.get('ntok')
+        if (await verifyNotifyToken(event, email, ntok)) {
+            const notificationRecord = await db
+                .select()
+                .from(notifications)
                 .where(
                     and(
                         eq(notifications.type, 1),
                         eq(notifications.sendToEmail, email),
                     ),
                 )
+            if (notificationRecord.length > 0) {
+                data = { notificationRecord, ...data }
+                await db
+                    .update(notifications)
+                    .set({ type: 0 })
+                    .where(
+                        and(
+                            eq(notifications.type, 1),
+                            eq(notifications.sendToEmail, email),
+                        ),
+                    )
+            }
         }
     }
 

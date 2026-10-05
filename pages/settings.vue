@@ -42,6 +42,11 @@
       <Input type="password" id="password" placeholder="留空则不修改密码" autocomplete="off" v-model="state.password" />
     </div>
 
+    <div class="flex flex-col gap-2" v-if="state.password">
+      <Label for="oldPassword" class="font-bold">原密码</Label>
+      <Input type="password" id="oldPassword" placeholder="修改密码需先验证原密码" autocomplete="off" v-model="state.oldPassword" />
+    </div>
+
     <div class="flex flex-col gap-2">
       <Label for="nickname" class="font-bold">昵称</Label>
       <Input type="text" id="nickname" placeholder="头像左边的作者名字" autocomplete="off" v-model="state.nickname" />
@@ -112,6 +117,7 @@ const state = reactive({
   username: '',
   eMail: '',
   password: '',
+  oldPassword: '',
   nickname: '',
   slogan: '',
   avatarUrl: '',
@@ -207,6 +213,7 @@ const saveSettings = async () => {
             // 改密后强制重新登录的分支永远走不到
             const changedPassword = state.password
             state.password = ''
+            state.oldPassword = ''
             // 让 SPA 级 site-settings 缓存失效，下一次读取会重拉新值（customWeather /
             // customLocation / timeFrontend 等都是从这里读的）。
             // 配合 location.reload() 是冗余的，但 reload 一旦未来被移除就靠它兜底。
