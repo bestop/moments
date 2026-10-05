@@ -104,7 +104,7 @@ const changeEmailButtonDisabled = ref(false)
 const changeEmailButtonTitle = computed(() => changeEmail.value ? '取消变更' : '更改邮箱')
 
 useHead({
-  title: '设置-'+(response.data.title || 'Randall的小屋'),
+  title: '设置-'+(response.data.title || 'Moments'),
 })
 
 

@@ -9,7 +9,7 @@
 
     <div class="flex flex-col gap-2 qus-box">
       <Label for="siteUrl" class="font-bold">网站URL</Label>
-      <Input type="text" id="siteUrl" placeholder="网站URL，如：https://moments.randallanjie.com" autocomplete="off" v-model="state.siteUrl" />
+      <Input type="text" id="siteUrl" placeholder="网站URL，如：https://example.com" autocomplete="off" v-model="state.siteUrl" />
     </div>
 
     <div class="flex flex-col gap-2 qus-box">
@@ -67,14 +67,14 @@
         <Label for="metingApi" class="font-bold">音乐API</Label>
         <div class="tooltip">
                   <span class="tooltip-text">
-                    音乐API地址，留空默认使用原版，如果原版不能用可以使用我的服务：https://musicapi.randallanjie.com/
+                    音乐API地址，留空默认使用原版
                   </span>
           <div class="circle">
             <span class="exclamation">!</span>
           </div>
         </div>
       </div>
-      <Input type="text" id="metingApi" placeholder="填写音乐api，例如：https://musicapi.randallanjie.com/" autocomplete="off" v-model="state.metingApi" />
+      <Input type="text" id="metingApi" placeholder="填写音乐api地址，留空使用原版" autocomplete="off" v-model="state.metingApi" />
     </div>
 
     <div class="flex flex-col gap-2 qus-box">
@@ -412,7 +412,7 @@ if(!response.success || !response.data.isadmin){
 }
 
 useHead({
-  title: '设置-'+(response.data.title || 'Randall的小屋'),
+  title: '设置-'+(response.data.title || 'Moments'),
 })
 
 const enableS3 = useStorage("enableS3", false);
@@ -477,7 +477,7 @@ const state = reactive({
 
 const { data: res } = await useFetch<{ data: typeof state }>('/api/site/config/get',{key:'settings'})
 const data = res.value?.data
-state.title = data?.title || 'Randall的小屋'
+state.title = data?.title || 'Moments'
 state.favicon = data?.favicon || '/favicon.png'
 state.enableS3 = data?.enableS3 || false
 state.domain = data?.s3Domain || ''

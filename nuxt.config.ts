@@ -21,9 +21,9 @@ export default defineNuxtConfig({
       maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
     },
     manifest: {
-      name: "Randall的小屋",
+      name: "Moments",
       short_name: "Moments",
-      description: "Randall的小屋 - Moments 个人时间线",
+      description: "Moments 个人时间线",
       lang: "zh-CN",
       theme_color: "#181818",
       background_color: "#f1f5f9",
@@ -115,8 +115,6 @@ export default defineNuxtConfig({
       script: [
         { src: `/js/APlayer.min.js`, type: 'text/javascript', async: true, defer: true },
         { src: `/js/Meting.min.js`, type: 'text/javascript', async: true, defer: true },
-        // bigrandall.io 站点分析
-        { src: 'https://bigrandall.io/insights.js', defer: true, 'data-site': 'cmr8m3efu1ohx1jahicqya1mj' },
       ]
     }
   },

@@ -212,7 +212,7 @@ onMounted(async () => {
         textContent: userinfo.value?.js || '',
       }
     ],
-    title: userinfo.value.title || 'Randall的小屋',
+    title: userinfo.value.title || 'Moments',
   })
   const siteConfig = await $fetch('/api/site/config/get')
   if(siteConfig && siteConfig.success && siteConfig.data && siteConfig.data.enableRecaptcha){

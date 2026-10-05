@@ -75,14 +75,37 @@ export default defineEventHandler(async (event) => {
 
   if (data.content) {
     try {
-      const res = await fetch(
-        `https://translate.api.randallanjie.com/?text=${encodeURIComponent(data.content)}`,
-      )
-      const result = (await res.json()) as
-        | { response?: { translated_text?: string } }
-        | null
-      if (result && result.response && result.response.translated_text) {
-        data.content = result.response.translated_text
+      // MyMemory 公共翻译接口（无需密钥，数据中心环境实测可达）。
+      // langpair=Autodetect|zh-CN 自动检测源语言，目标固定为简体中文。
+      // 单次请求上限 500 字符，超长内容按 480 字符分块逐段翻译后拼接；
+      // 超过 5000 字符直接放弃翻译（匿名配额 5000 字符/天）。
+      const source = data.content
+      if (source.length <= 5000) {
+        const CHUNK_SIZE = 480
+        const chunks: string[] = []
+        for (let i = 0; i < source.length; i += CHUNK_SIZE) {
+          chunks.push(source.slice(i, i + CHUNK_SIZE))
+        }
+        const translatedParts: string[] = []
+        for (const chunk of chunks) {
+          const res = await fetch(
+            `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=Autodetect|zh-CN`,
+          )
+          const result = (await res.json()) as {
+            responseData?: { translatedText?: string }
+            responseStatus?: number | string
+          } | null
+          const text = result?.responseData?.translatedText
+          if (
+            result?.responseStatus !== 200 ||
+            !text ||
+            text.startsWith('MYMEMORY WARNING')
+          ) {
+            throw new Error('translation provider failed')
+          }
+          translatedParts.push(text)
+        }
+        data.content = translatedParts.join('')
       }
     } catch (_e) {
       // Translation is best-effort; on failure, return the original content.
