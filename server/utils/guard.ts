@@ -10,9 +10,19 @@ const memory = new Map<string, { count: number; resetAt: number }>()
 type LimiterHealth = { backend: 'redis' | 'memory'; lastError: string | null }
 const health: LimiterHealth = { backend: 'memory', lastError: null }
 
-/** 供 /api/ping 观测限流器状态（key 误用排查用，不暴露敏感值）。 */
+/**
+ * 供 /api/ping 观测限流器状态（key 误用排查用，不暴露敏感值）。
+ * 注意：Vercel preset 下每个 API 路由是独立函数实例，health 只反映
+ * 本实例最近一次限流调用的结果——ping 自身从不触发限流，其 isolate
+ * 里的 backend 恒为初始值。判断 Redis 是否已注入请看 redisEnvConfigured()。
+ */
 export function rateLimitHealth(): LimiterHealth {
   return { backend: health.backend, lastError: health.lastError }
+}
+
+/** 供 /api/ping 判断 Redis 环境变量是否已注入（纯 env 读取，无网络 I/O）。 */
+export function redisEnvConfigured(): boolean {
+  return restConfig() !== null
 }
 
 function restConfig(): { url: string; token: string } | null {
