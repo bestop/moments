@@ -23,6 +23,19 @@ export default defineEventHandler(async (event) => {
   let { email, action } = (await readBody(event)) as sendMailReq
   let userid = 0
 
+  // 参数合法性先行：无效 action/邮箱直接拒绝，不做 KV 查询也不发信
+  if (!['register', 'resetPassword', 'changeEmail'].includes(action)) {
+    return { success: false, message: '参数错误' }
+  }
+  if (action !== 'resetPassword') {
+    // resetPassword 的入参可能是用户名，格式校验延后到用户查找之后
+    if (!email) {
+      return { success: false, message: '邮箱不能为空' }
+    } else if (!/^[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$/.test(email)) {
+      return { success: false, message: '邮箱格式不正确' }
+    }
+  }
+
   const db = useDb(event)
 
   if (action === 'resetPassword') {
@@ -62,16 +75,6 @@ export default defineEventHandler(async (event) => {
   const existing = await kvGet(action + email)
   if (existing) {
     return { success: false, message: '上一条验证码还未过期，请五分钟后再试' }
-  }
-
-  if (!email) {
-    return { success: false, message: '邮箱不能为空' }
-  } else if (!/^[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$/.test(email)) {
-    return { success: false, message: '邮箱格式不正确' }
-  }
-
-  if (!['register', 'resetPassword', 'changeEmail'].includes(action)) {
-    return { success: false, message: '参数错误' }
   }
 
   const verificationCode = await generateVerificationCode(db)

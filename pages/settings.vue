@@ -9,29 +9,34 @@
     </div>
 
     <div class="flex flex-col gap-2">
-      <Label for="username" class="font-bold">邮箱</Label>
+      <Label for="eMail" class="font-bold">邮箱</Label>
       <div class="flex flex-row gap-2">
         <Input type="text" id="eMail" placeholder="邮箱" autocomplete="off" v-model="state.eMail" disabled="disabled"/>
         <Button @click="changeEmailButtonFunction"
-                :disabled="changeEmailButtonDisabled"
                 type="button"
+                variant="outline"
+                class="shrink-0"
         >{{ changeEmailButtonTitle }}</Button>
       </div>
-      <template v-if='changeEmail'>
-        <div class="flex flex-col gap-2">
-          <Label for="newEmail" class="font-bold">新邮箱</Label>
-          <div class="flex flex-row gap-2">
-            <Input type="text" id="newEmail" placeholder="新邮箱" autocomplete="off" v-model="state.newEMail" />
-            <Button id="sendMail"
-                    @click="sendMail"
-                    :disabled="changeEmailButtonDisabled"
-                    type="button"
-            >发送验证码</Button>
+      <template v-if="changeEmail">
+        <div class="rounded-lg border border-neutral-200 bg-neutral-50/60 p-3 flex flex-col gap-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+          <div class="flex flex-col gap-2">
+            <Label for="newEmail" class="text-sm">新邮箱</Label>
+            <Input type="email" id="newEmail" placeholder="接收验证码的新邮箱" autocomplete="email" v-model="state.newEMail" />
           </div>
-        </div>
-        <div class="flex flex-col gap-2">
-          <Label for="newEmail" class="font-bold">邮箱验证码</Label>
-          <Input type="text" id="newEmail" placeholder="邮箱验证码" autocomplete="off" v-model="state.eMailVerificationCode" />
+          <div class="flex flex-col gap-2">
+            <Label for="emailCode" class="text-sm">邮箱验证码</Label>
+            <div class="flex flex-row gap-2">
+              <Input type="text" id="emailCode" placeholder="6 位验证码" maxlength="6" autocomplete="one-time-code" v-model="state.eMailVerificationCode" />
+              <Button @click="sendMail"
+                      :disabled="sending || cooling"
+                      type="button"
+                      variant="outline"
+                      class="shrink-0 whitespace-nowrap"
+              >{{ sendButtonTitle }}</Button>
+            </div>
+            <p class="text-xs text-neutral-500 dark:text-neutral-400">验证码将发送至新邮箱，5 分钟内有效；未收到请检查垃圾邮件。</p>
+          </div>
         </div>
       </template>
 
@@ -105,8 +110,12 @@ import {toast} from "vue-sonner";
 const response = await $fetch('/api/user/settings/get?user=0');
 
 const changeEmail = ref(false)
-const changeEmailButtonDisabled = ref(false)
+// 发送按钮冷却：与服务端“单邮箱 5 分钟窗口 + 每 IP 5 次/小时”限流对齐，
+// 避免连点撞限流后只能看到报错
+const { countdown: cooldown, cooling, start: startCooldown } = useCodeCooldown(60)
+const sending = ref(false)
 const changeEmailButtonTitle = computed(() => changeEmail.value ? '取消变更' : '更改邮箱')
+const sendButtonTitle = computed(() => cooling.value ? `${cooldown.value}s后重发` : '发送验证码')
 
 useHead({
   title: '设置-'+(response.data.title || 'Moments'),
@@ -137,6 +146,7 @@ const changeEmailButtonFunction = () => {
 }
 
 const sendMail = async () => {
+  if (sending.value || cooling.value) return
   if(!state.newEMail){
     toast.warning('请填写新邮箱')
     return
@@ -145,31 +155,32 @@ const sendMail = async () => {
     toast.warning('新邮箱不能和旧邮箱一样')
     return
   }
-  changeEmailButtonDisabled.value = true
-  toast.promise( $fetch('/api/user/sendMail', {
-        method: 'POST',
-        body: JSON.stringify({
-          email: state.newEMail,
-          action: 'changeEmail'
-        })
-      }), {
-        loading: '发送中...',
-        success: (data) => {
-          changeEmailButtonDisabled.value = false
-          if (data.success) {
-            return '发送成功';
-          } else {
-            // error 字段是后端返回的底层失败原因（如 Resend 域名未验证），
-            // 原本只在响应体里、前端不展示，排障时只能靠 curl —— 这里直接带出来
-            return '发送失败: ' + data.message + (data.error ? '（' + data.error + '）' : '');
-          }
-        },
-        error: (error) => `发送失败: ${error.message || '未知错误'}`, // 显示具体的错误信息
-      }
-  );
+  sending.value = true
+  try {
+    const data: any = await $fetch('/api/user/sendMail', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: state.newEMail,
+        action: 'changeEmail'
+      })
+    })
+    if (data.success) {
+      startCooldown()
+      toast.success('验证码已发送至新邮箱，5 分钟内有效，请注意查收')
+    } else {
+      // error 字段是后端返回的底层失败原因（如 Resend 域名未验证），直接带出来便于排障
+      toast.warning('发送失败: ' + data.message + (data.error ? `（${data.error}）` : ''))
+    }
+  } catch (e: any) {
+    // 网络错误/超时也要给出反馈，且 finally 会恢复按钮可用
+    toast.warning(`发送失败: ${e?.message || '未知错误'}`)
+  } finally {
+    sending.value = false
+  }
 }
 
-const { data: res } = await useFetch<{ data: typeof state }>('/api/user/settings/full',{key:'user-settings-full'})
+// key 绑定 userId：固定 key 会在 SPA 换号登录后复用上一账号的缓存资料（串号）
+const { data: res } = await useFetch<{ data: typeof state }>('/api/user/settings/full',{key:'user-settings-' + (userId.value || 'anon')})
 const data = res.value?.data
 state.coverUrl = data?.coverUrl || '/cover.webp'
 state.avatarUrl = data?.avatarUrl || '/avatar.webp'
@@ -234,7 +245,7 @@ const saveSettings = async () => {
             throw new Error(data.message)
           }
         },
-        error: (error) => `保存失败: ${error || '未知错误'}`,
+        error: (error: any) => `保存失败: ${error?.message || '未知错误'}`,
       }
   );
 }

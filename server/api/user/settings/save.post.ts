@@ -26,6 +26,10 @@ type SaveSettingsReq = {
 export default defineEventHandler(async (event) => {
   const {
     username,
+    // 丢弃 body 里的 eMail：邮箱只能走 newEMail + 验证码流程修改。
+    // 若让它落入 rest，任何人 POST {eMail: x} 就能绕过验证码直接改邮箱
+    // （改完即可走忘记密码接管账号），整个验证码流程形同虚设。
+    eMail: _bodyEMail,
     password,
     oldPassword,
     nickname,
@@ -116,7 +120,11 @@ export default defineEventHandler(async (event) => {
     }
     const codeKey = 'changeEmail' + newEMail
     const verificationCode = await kvGet(codeKey)
-    if (!verificationCode || verificationCode !== eMailVerificationCode) {
+    // 过期/未发送与填错分开提示，前者引导重发而不是反复检查输入
+    if (!verificationCode) {
+      return { success: false, message: '验证码已过期或未发送，请重新获取' }
+    }
+    if (verificationCode !== eMailVerificationCode) {
       return { success: false, message: '验证码错误' }
     }
     await kvDelete(codeKey)
@@ -136,8 +144,13 @@ export default defineEventHandler(async (event) => {
   }
   if (data.username !== undefined) setPayload.username = data.username
   if (data.password !== undefined) setPayload.password = data.password
+  // eMail 不再从 body 透传（见上方解构注释），唯一写入路径是上方的
+  // mailChange 分支（newEMail + 验证码校验通过后 data.eMail = newEMail）。
   if (data.eMail !== undefined) setPayload.eMail = data.eMail
   if (data.css !== undefined) setPayload.css = data.css
+  // js 与 css 同级：settings 页有输入框、表有列，但此前 payload 漏写 js，
+  // 导致自定义 JS 永远不生效
+  if (data.js !== undefined) setPayload.js = data.js
 
   await db.update(users).set(setPayload).where(eq(users.id, userId))
 
