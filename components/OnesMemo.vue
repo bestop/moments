@@ -32,29 +32,14 @@
 
 <script setup lang="ts">
 import type { Memo } from '@/lib/types';
-import { useElementSize, onClickOutside, watchOnce, useStorage } from '@vueuse/core';
+import { useElementSize, watchOnce } from '@vueuse/core';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
-import { Heart, HeartCrack, MessageSquareMore, Trash2, FilePenLine, Pin } from 'lucide-vue-next'
-import { memoUpdateEvent } from '@/lib/event'
 import { getImgUrl } from '~/lib/utils';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
-const token = useCookie('token')
-import DOMPurify from 'dompurify';
+import { sanitizeMemoHtml } from '~/lib/sanitizeMemo'
 
 const imgs = computed(() => props.memo.imgs ? props.memo.imgs.split(',') : []);
-let userId = ref(0)
 
 const gridStyle = computed(() => {
   let style = 'align-items: start;';
@@ -87,28 +72,10 @@ const props = withDefaults(
 )
 
 
-const emit = defineEmits(['memo-update'])
-
-const showAll = ref(false)
-const showToolbar = ref(false)
-const showCommentInput = ref(false)
-const toolbarRef = ref(null)
-const showUserCommentArray = ref<Array<boolean>>([])
 const el = ref<any>(null)
-let hh = ref(0)
 const { height } = useElementSize(el)
-const likeList = useStorage<Array<number>>('likeList', [])
-
-onMounted(async () => {
-  if (token) {
-    userId = useCookie('userId')
-  }
-})
-
-onClickOutside(toolbarRef, () => showToolbar.value = false)
 
 watchOnce(height, () => {
-  hh.value = height.value
   if (height.value > 96) {
     el.value.classList.add('line-clamp-4')
     // 将内容截断为4行，后面的内容删除
@@ -177,7 +144,7 @@ const replaceNewLinesExceptInCodeBlocks = (text: any) => {
   if (text.endsWith('<br />')) {
     text = text.substring(0, text.length - 6);
   }
-  return DOMPurify.sanitize(text, { ALLOWED_TAGS: ['a', 'p', 'span', 'ul', 'ol', 'li', 'img', 'strong', 'em', 'del', 'blockquote', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'br', 'hr', 'iframe', 'input'] });
+  return sanitizeMemoHtml(text);
 };
 
 </script>

@@ -93,7 +93,7 @@ import { settingsUpdateEvent } from '~/lib/event'
 import { getImgUrl } from '~/lib/utils'
 const token = useCookie('token')
 const userId = useCookie('userId')
-import { useStorage } from "@vueuse/core";
+import { useSiteSettings } from '@/composables/useSiteSettings'
 import type { User } from '~/lib/types';
 import {toast} from "vue-sonner";
 
@@ -161,7 +161,7 @@ const sendMail = async () => {
   );
 }
 
-const { data: res } = await useFetch<{ data: typeof state }>('/api/user/settings/full',{key:'settings'})
+const { data: res } = await useFetch<{ data: typeof state }>('/api/user/settings/full',{key:'user-settings-full'})
 const data = res.value?.data
 state.coverUrl = data?.coverUrl || '/cover.webp'
 state.avatarUrl = data?.avatarUrl || '/avatar.webp'
@@ -203,13 +203,16 @@ const saveSettings = async () => {
         loading: '保存中...',
         success: (data) => {
           if(data.success){
+            // 先取出本次是否改了密码再清空输入框 —— 原先先清空再判断，
+            // 改密后强制重新登录的分支永远走不到
+            const changedPassword = state.password
             state.password = ''
             // 让 SPA 级 site-settings 缓存失效，下一次读取会重拉新值（customWeather /
             // customLocation / timeFrontend 等都是从这里读的）。
             // 配合 location.reload() 是冗余的，但 reload 一旦未来被移除就靠它兜底。
             useSiteSettings().invalidate()
             settingsUpdateEvent.emit()
-            if (state.password) {
+            if (changedPassword) {
               token.value = ''
               userId.value = '0'
               navigateTo('/login')

@@ -110,16 +110,6 @@
                 </DropdownMenuItem>
 
                 <DropdownMenuSeparator class="h-[1px] bg-green6 m-[5px]" />
-
-<!--                <DropdownMenuItem-->
-<!--                    class="group text-[13px] leading-none text-grass11 rounded-[3px] flex items-center h-[25px] px-[5px] relative pl-[25px] select-none outline-none data-[disabled]:text-mauve8 data-[disabled]:pointer-events-none data-[highlighted]:bg-green9 data-[highlighted]:text-green1"-->
-<!--                    @click="translate.setUseVersion2();translate.execute();"-->
-<!--                >-->
-<!--                  中英文切换-->
-<!--                </DropdownMenuItem>-->
-
-<!--                <DropdownMenuSeparator class="h-[1px] bg-green6 m-[5px]" />-->
-
                 <DropdownMenuArrow class="fill-white" />
               </DropdownMenuContent>
             </DropdownMenuPortal>
@@ -139,27 +129,16 @@ import { useState, useAsyncData } from '#imports';
 import { ref } from 'vue'
 import {
   DropdownMenuArrow,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuItemIndicator,
-  DropdownMenuLabel,
   DropdownMenuPortal,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuRoot,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from 'radix-vue'
 import { getImgUrl } from '~/lib/utils'
 
 const toggleState = ref(false)
-const checkboxOne = ref(false)
-const checkboxTwo = ref(false)
-const person = ref('pedro')
 const userId = useCookie('userId')
 const colorMode = useColorMode()
 
@@ -174,7 +153,11 @@ onMounted(async () => {
   if(url.startsWith('/user/')) {
     findId = url.split('/user/')[1]
   }
-  const response = await $fetch('/api/user/settings/get?user=' + (findId == 'undefined' ? '0' : findId));
+  // 两个配置接口并行拉取（原先串行 await，白多一个 RTT）
+  const [response, siteConfig] = await Promise.all([
+    $fetch('/api/user/settings/get?user=' + (findId == 'undefined' ? '0' : findId)),
+    $fetch('/api/site/config/get'),
+  ])
   const { data: res } = await useAsyncData('userinfo', async () => response);
   // 将response存储systemConfig中
   await useAsyncData('systemConfig', async () => response)
@@ -214,7 +197,6 @@ onMounted(async () => {
     ],
     title: userinfo.value.title || 'Moments',
   })
-  const siteConfig = await $fetch('/api/site/config/get')
   if(siteConfig && siteConfig.success && siteConfig.data && siteConfig.data.enableRecaptcha){
     if (!document.getElementById('recaptcha-script')) {
       const script = document.createElement('script');
@@ -229,10 +211,6 @@ onMounted(async () => {
   window.addEventListener('menurefresh', () => {
     userId.value = useCookie('userId').value
   })
-  const script = document.createElement('script');
-  script.src = 'https://cdn.staticfile.net/translate.js/3.2.3/translate.js';
-  script.async = true;
-  document.body.appendChild(script);
 })
 
 const logout = () => {

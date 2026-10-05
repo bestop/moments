@@ -90,6 +90,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 502, statusMessage: `Blob fetch failed: ${reason}` })
   }
 
-  setHeader(event, 'Cache-Control', 'public, max-age=31536000, immutable')
+  // key 是不可变 short-uuid：浏览器 immutable + 边缘 s-maxage（新访客每张图
+  // 只回源一次函数调用；对象删除后边缘最多 1 天内可能仍 302 到已删对象，
+  // 与私有流分支既有行为一致）
+  setHeader(event, 'Cache-Control', 'public, max-age=31536000, immutable, s-maxage=86400')
   return sendRedirect(event, url, 302)
 })

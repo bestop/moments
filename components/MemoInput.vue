@@ -62,7 +62,7 @@
               </div>
               <Button size="sm" class="mr-2" @click="importMusic">确定</Button>
               <Button size="sm" variant="ghost"
-                      @click="music163Url = ''; music163Url = ''; audioUrl = ''; music163Open = false;">清空</Button>
+                      @click="music163Url = ''; music163Open = false;">清空</Button>
             </div>
           </PopoverContent>
         </Popover>
@@ -332,7 +332,7 @@ import { Button } from '@/components/ui/button'
 import { memoUpdateEvent, memoAddEvent } from '@/lib/event'
 import type { Memo } from '~/lib/types';
 import { useAnimate } from '@vueuse/core';
-import { Image, Music4, Settings, Trash2, LogOut,  Link, Youtube, CircleX, Check, FileSliders } from 'lucide-vue-next'
+import { Image, Music4, Trash2, Link, CircleX, Check } from 'lucide-vue-next'
 import { ref } from 'vue';
 import {toast} from "vue-sonner";
 import {
@@ -354,7 +354,6 @@ import {
   ComboboxTrigger,
   ComboboxViewport
 } from "radix-vue";
-import {memo} from "@tanstack/virtual-core";
 import { useState, useAsyncData } from '#imports';
 const locationInfo = ref('');
 const inputs0 = ref('');

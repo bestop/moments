@@ -475,7 +475,7 @@ const state = reactive({
   aboutHtml: ''
 })
 
-const { data: res } = await useFetch<{ data: typeof state }>('/api/site/config/get',{key:'settings'})
+const { data: res } = await useFetch<{ data: typeof state }>('/api/site/config/get',{key:'site-config'})
 const data = res.value?.data
 state.title = data?.title || 'Moments'
 state.favicon = data?.favicon || '/favicon.png'

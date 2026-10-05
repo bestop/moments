@@ -16,7 +16,21 @@ export default defineNuxtConfig({
     srcDir: "service-worker",
     filename: "sw.ts",
     injectManifest: {
-      globPatterns: ["**/*.{js,css,ico,png,svg,webp,woff,woff2}"],
+      // 只预缓存构建产物 + 站点必需的小体积静态资源。不要用宽泛的
+      // public/** 通配 —— 以后任何放进 public 的大图都会被打进每个用户
+      // 的离线缓存，首装流量爆炸。
+      globPatterns: [
+        "_nuxt/**",
+        "pwa-*.png",
+        "favicon*",
+        "apple-touch-icon.png",
+        "avatar.webp",
+        "cover.webp",
+        "loader.svg",
+        "css/APlayer.min.css",
+        "js/APlayer.min.js",
+        "js/Meting.min.js",
+      ],
       globIgnores: ["**/heic-converter*.js"],
       maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
     },

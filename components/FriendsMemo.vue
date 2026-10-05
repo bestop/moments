@@ -198,7 +198,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {toast} from "vue-sonner";
-import DOMPurify from 'dompurify';
+import { sanitizeMemoHtml } from '~/lib/sanitizeMemo'
 import 'aplayer/dist/APlayer.min.css';
 
 const token = useCookie('token')
@@ -556,7 +556,11 @@ const like = async () => {
     } else {
       likeList.value.push(props.memo.id)
     }
-    emit('memo-update')
+    // 本地 patch：接口已返回最新 favCount，无需整表重拉
+    //（旧实现 emit → 父组件 firstLoad，重拉第一页并把滚动位置重置到顶部）
+    if (res.data && typeof res.data.favCount === 'number') {
+      props.memo.favCount = res.data.favCount
+    }
   }
 }
 
@@ -761,7 +765,7 @@ const replaceNewLinesExceptInCodeBlocks = (text: string) => {
     text = text.slice(0, -1)
   }
 
-  const returns =  DOMPurify.sanitize(text, { ALLOWED_TAGS: ['a', 'p', 'span', 'ul', 'ol', 'li', 'img', 'strong', 'em', 'del', 'blockquote', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'br', 'hr', 'iframe', 'input'] });
+  const returns = sanitizeMemoHtml(text);
   return returns;
 };
 
