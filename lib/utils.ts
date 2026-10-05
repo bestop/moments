@@ -22,6 +22,18 @@ export const getImgUrl = (url: string) => {
   return url;
 };
 
+/**
+ * 内容页 SEO 摘要：剥掉 HTML 标签、压缩空白后截断。
+ * memo.content 存的是编辑器产出的 HTML 片段，直接进 meta description
+ * 会带标签；正文纯文本摘要对搜索引擎和分享卡片都更友好。
+ */
+export const plainExcerpt = (html: string | null | undefined, max = 110): string =>
+  (html ?? '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+
 export const insertTextAtCursor = (text: string, textarea: HTMLTextAreaElement | undefined) => {
   if (!textarea) return; // 检查textarea是否存在
 

@@ -29,6 +29,7 @@
 
 <script setup lang="ts">
 import { type Memo } from '~/lib/types';
+import { plainExcerpt } from '~/lib/utils';
 import {onMounted, onUnmounted, watch, ref, computed} from 'vue';
 
 import OnesMemo from "~/components/OnesMemo.vue";
@@ -41,12 +42,40 @@ const route = useRoute()
 const userId = useCookie('userId');
 let findId = userId.value
 
+// SSR 化：第一页列表在服务端获取并随 HTML 返回（useFetch 自动转发 cookie，
+// 私密内容过滤与客户端一致）；翻页仍走客户端 loadMore 无限滚动。
+const { data: firstPage } = await useFetch('/api/memo/list', {
+  key: `user-memo-list:${route.params.id}:1`,
+  method: 'POST',
+  body: { user: route.params.id, page: 1 },
+})
+
+// —— 内容页 SEO meta ——
+const firstUser = computed(() =>
+  Array.isArray(firstPage.value?.data) && firstPage.value.data.length
+    ? (firstPage.value.data[0] as any)?.user
+    : null,
+)
+const authorName = computed(() => firstUser.value?.nickname || firstUser.value?.username || '')
+const pageTitle = computed(() => (authorName.value ? `${authorName.value}的 Moments` : 'Moments'))
+const excerpt = computed(() =>
+  Array.isArray(firstPage.value?.data) && firstPage.value.data.length
+    ? plainExcerpt((firstPage.value.data[0] as any)?.content ?? '')
+    : '',
+)
+useSeoMeta({
+  title: pageTitle,
+  description: () => excerpt.value || undefined,
+  ogTitle: pageTitle,
+  ogDescription: () => excerpt.value || undefined,
+})
+
 onMounted(async () => {
   const url = window.location.pathname
   if(url.startsWith('/user/')) {
     findId = url.split('/user/')[1]
   }
-  await firstLoad();
+  // 第一页已由 SSR 取回（见上方 useFetch），这里不再重复 firstLoad
   const observer = new IntersectionObserver((entries) => {
     if (entries[0].isIntersecting) {
       loadMore();
@@ -147,9 +176,12 @@ const setupObserver = () => {
 
 
 const state = reactive({
-  memoList: Array<Memo>(),
+  // 初值来自 SSR 拉取的第一页；水合时 useAsyncData payload 已就位，两端一致
+  memoList: ((firstPage.value?.success && Array.isArray(firstPage.value.data))
+    ? (firstPage.value.data as unknown as Memo[])
+    : []),
   page: 1,
-  hasNext: false
+  hasNext: firstPage.value?.hasNext || false,
 })
 
 const firstLoad = async () => {
