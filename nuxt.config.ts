@@ -1,6 +1,8 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   devtools: { enabled: true },
+  // Nitro 行为兼容性基准日（nuxt 3.12+ 要求显式声明；取当前 nitro 稳定行为）
+  compatibilityDate: '2025-07-15',
   ssr: true,
   modules: [
     "@nuxtjs/tailwindcss",
@@ -123,8 +125,9 @@ export default defineNuxtConfig({
     //   ]
     // }
     head: {
-      style: [
-        { src: `/css/APlayer.min.css`, type: 'text/css' },
+      // unhead v2（nuxt 3.21 起）不再支持 style[src] 写法，改用标准 stylesheet link
+      link: [
+        { rel: 'stylesheet', href: '/css/APlayer.min.css' },
       ],
       script: [
         { src: `/js/APlayer.min.js`, type: 'text/javascript', async: true, defer: true },

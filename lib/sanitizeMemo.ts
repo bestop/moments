@@ -6,7 +6,7 @@
 // input 保留（markdown 待办清单 `- [ ]` 的渲染依赖它，纯 disabled 无脚本面）。
 import DOMPurify from 'dompurify'
 
-const ALLOWED_IFRAME_HOSTS = new Set([
+export const ALLOWED_IFRAME_HOSTS = new Set([
   'www.bilibili.com',
   'player.bilibili.com',
   'www.youtube.com',
@@ -43,6 +43,15 @@ export const MEMO_SANITIZE_TAGS = [
 ]
 
 export function sanitizeMemoHtml(html: string): string {
+  if (import.meta.server) {
+    // SSR：服务端没有 DOM，DOMPurify 不可用。实际净化由
+    // server/plugins/memoSanitize.ts 启动时注入的同策略 cheerio 实现完成
+    //（bridge 注入，避免 cheerio 进入客户端 bundle）。桥未就绪时退化为
+    // 整体转义 —— 按纯文本渲染，安全优先。
+    const impl = (globalThis as Record<string, unknown> | undefined)?.__memoSanitizeServer
+    if (typeof impl === 'function') return (impl as (h: string) => string)(html)
+    return html.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' } as Record<string, string>)[c] ?? c)
+  }
   installIframeHostHook()
   return DOMPurify.sanitize(html, { ALLOWED_TAGS: MEMO_SANITIZE_TAGS })
 }
