@@ -122,8 +122,10 @@ export default defineNuxtConfig({
     public: {
       // Web Push VAPID 公钥（浏览器订阅时需要）。私钥/subject 走服务端
       // 环境变量 VAPID_PRIVATE_KEY / VAPID_SUBJECT（Vercel 项目环境变量）。
-      vapidPublicKey: process.env.VAPID_PUBLIC_KEY
-        || 'BBWjYp1l-pjKkNcjNghpQb5B7DmwtnOhLsCbBERCUbzSI40D5CouDewrIg5sWTpXb1ClbJBCNE_VZmxof395Ch8',
+      // 不留硬编码 fallback：旧密钥对的私钥随 Cloudflare Pages secrets 一起
+      // 丢了，用它订阅的用户永远收不到推送；构建时缺 VAPID_PUBLIC_KEY 会让
+      // 前端在点击订阅时显式报「VAPID 公钥未配置」，比静默坏掉好排查。
+      vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? '',
     },
   },
   app: {

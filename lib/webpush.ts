@@ -225,6 +225,8 @@ export async function sendWebPush(opts: {
     ok: res.ok,
     status: res.status,
     body: text,
-    isGone: res.status === 404 || res.status === 410 || res.status === 408,
+    // 403 = VAPID 校验失败（如密钥对更换后仍存活的旧订阅，每次发送必然 403
+    // 且永远无法送达），与 404/410/408 一样按失效处理、自动清理自愈
+    isGone: res.status === 404 || res.status === 410 || res.status === 408 || res.status === 403,
   }
 }

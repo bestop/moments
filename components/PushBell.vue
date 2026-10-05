@@ -59,9 +59,14 @@ async function onToggle() {
       toast.success('通知已开启')
       // 订阅成功后自动发一条测试通知验证链路；失败就当没事，不打扰用户
       try { await test() } catch {}
+    } else if (state.value === 'denied') {
+      // 原先 denied 态点击无任何反馈（死按钮）；给出可操作的指引
+      toast.warning('通知权限已被拒绝：请在浏览器地址栏的权限设置里允许通知后，刷新本页重试')
+    } else if (state.value === 'unsupported') {
+      toast.warning('当前浏览器不支持 Web Push：iOS 需先将本站添加到主屏幕')
     }
   } catch (e: any) {
-    toast.warning('操作失败：' + (e?.message ?? e))
+    toast.warning('操作失败：' + (e?.message ?? e), { duration: 8000 })
   }
 }
 
