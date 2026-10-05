@@ -14,7 +14,21 @@
 // fallback is single-instance only — configure Upstash for anything real.
 
 const PREFIX = 'moments:kv:'
-const MEMORY_TTL_MS = 5 * 60 * 1000
+
+// Warn once per process when falling back to memory, so operators can spot a
+// missing/removed Upstash config in the function logs (same spirit as
+// guard.ts's "degrade to memory" log for the rate limiter).
+let warnedNoRedis = false
+function warnNoRedisOnce(): void {
+  if (warnedNoRedis) return
+  warnedNoRedis = true
+  console.warn(
+    '[kv] Upstash Redis not configured (UPSTASH_REDIS_REST_* or KV_REST_API_* env); ' +
+      'verification codes / reset tokens fall back to per-instance memory — ' +
+      'multi-instance deployments will intermittently fail to match codes. ' +
+      'Configure Redis env vars to fix.',
+  )
+}
 
 type MemoryEntry = { value: string; expiresAt: number }
 
@@ -59,6 +73,7 @@ export async function kvGet(key: string): Promise<string | null> {
     const result = await rest(['GET', PREFIX + key])
     return typeof result === 'string' ? result : null
   }
+  warnNoRedisOnce()
   const entry = memory.get(PREFIX + key)
   if (!entry) return null
   if (entry.expiresAt > 0 && entry.expiresAt < Date.now()) {
@@ -79,6 +94,7 @@ export async function kvPut(key: string, value: string, ttlSeconds?: number): Pr
     }
     return
   }
+  warnNoRedisOnce()
   memory.set(PREFIX + key, {
     value,
     expiresAt: ttlSeconds && ttlSeconds > 0 ? Date.now() + ttlSeconds * 1000 : 0,
@@ -92,5 +108,6 @@ export async function kvDelete(key: string): Promise<void> {
     await rest(['DEL', PREFIX + key])
     return
   }
+  warnNoRedisOnce()
   memory.delete(PREFIX + key)
 }
