@@ -54,42 +54,26 @@ function tooMany(): never {
   throw createError({ statusCode: 429, statusMessage: '请求太频繁，请稍后再试' })
 }
 
-/** Upstash REST 单命令调用（兼容所有 Redis 版本，不依赖 pipeline / EXPIRE NX）。 */
-async function redisIncr(cfg: { url: string; token: string }, key: string): Promise<number> {
+/** Upstash REST 单命令调用。返回 result 字段（SET NX 未命中时为 null）。 */
+async function redisCommand(
+  cfg: { url: string; token: string },
+  args: unknown[],
+): Promise<unknown> {
   const res = await fetch(cfg.url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${cfg.token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(['INCR', key]),
+    body: JSON.stringify(args),
   })
   if (!res.ok) {
     const detail = await res.text().catch(() => '')
     throw new Error(`upstream ${res.status}: ${detail.slice(0, 120)}`)
   }
   const payload = (await res.json()) as { result?: unknown; error?: unknown }
-  if (payload?.error) throw new Error(`incr: ${JSON.stringify(payload.error).slice(0, 120)}`)
-  return Number(payload?.result ?? 0)
-}
-
-async function redisExpireIfNeeded(
-  cfg: { url: string; token: string },
-  key: string,
-  windowSeconds: number,
-): Promise<void> {
-  const res = await fetch(cfg.url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${cfg.token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(['EXPIRE', key, windowSeconds]),
-  })
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '')
-    throw new Error(`expire upstream ${res.status}: ${detail.slice(0, 120)}`)
-  }
+  if (payload?.error) throw new Error(`${args[0]}: ${JSON.stringify(payload.error).slice(0, 120)}`)
+  return payload?.result ?? null
 }
 
 /**
@@ -110,11 +94,26 @@ export async function rateLimit(
   if (cfg) {
     try {
       const key = PREFIX + bucket
-      const incr = await redisIncr(cfg, key)
-      // 首次计数时补 TTL（经典 INCR+EXPIRE 模式；极端情况下实例在两步间
-      // 重启会让 key 少了 TTL，多一条孤儿 key，可接受）
-      if (incr === 1) {
-        await redisExpireIfNeeded(cfg, key, windowSeconds)
+      // SET key 1 EX window NX —— 原子建钥带 TTL（SET+EX 是所有 Redis 版本的
+      // 基础能力；此前的 INCR+EXPIRE 两步间若失败会让 key 变成无 TTL 孤儿，
+      // 该 IP/动作从第 limit+1 次起永久 429。EXPIRE NX 虽也能解，但旧版
+      // Redis/Upstash 不支持，曾被 400 拒绝）。
+      const setResult = await redisCommand(cfg, ['SET', key, '1', 'EX', String(windowSeconds), 'NX'])
+      let incr: number
+      if (setResult === 'OK') {
+        incr = 1
+      } else {
+        incr = Number(await redisCommand(cfg, ['INCR', key])) || 0
+        // 自愈历史孤儿 key：旧代码可能留下无 TTL 的 key（TTL=-1），
+        // 只在首次拒绝时多查一次 TTL，代价可忽略
+        if (incr > limit) {
+          const ttl = await redisCommand(cfg, ['TTL', key])
+          if (Number(ttl) === -1) {
+            await redisCommand(cfg, ['DEL', key])
+            incr = 1
+            await redisCommand(cfg, ['SET', key, '1', 'EX', String(windowSeconds)])
+          }
+        }
       }
       health.backend = 'redis'
       health.lastError = null

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, ilike, isNotNull, ne, or } from 'drizzle-orm'
 import { del } from '@vercel/blob'
 import { useDb } from '~/lib/db'
 import { memos } from '~/lib/db/schema'
@@ -9,8 +9,8 @@ type RemoveMemoReq = {
 
 export default defineEventHandler(async (event) => {
   const body = (await readBody(event)) as RemoveMemoReq
-  const memoId = Number(body?.memoId)
-  if (!Number.isFinite(memoId) || memoId <= 0) {
+  const memoId = parseId(body?.memoId)
+  if (memoId === null) {
     throw createError({ statusCode: 400, statusMessage: 'memoId is required' })
   }
 
@@ -51,14 +51,52 @@ export default defineEventHandler(async (event) => {
         return null
       })
       .filter((k): k is string => !!k && k.length > 0)
-    await Promise.all(
-      pathnames.map(async (pathname) => {
-        try {
-          await del(pathname)
-        } catch (e) {
-          console.log('Blob delete error:', pathname, e)
+
+    // 跨用户引用保护：imgs 内容由作者任意填写，若无此检查，任何人都可以把
+    // 他人图片的 key 写进自己的 memo 再删帖，借此删除他人上传的 Blob；
+    // 正常用户转发/引用他人图片后删帖也会误删原图。只有当前再无其它
+    // memo 引用同一 key 时才真正删除。
+    const stillReferenced = new Set<string>()
+    if (pathnames.length > 0) {
+      try {
+        const refRows = await db
+          .select({ id: memos.id, imgs: memos.imgs })
+          .from(memos)
+          .where(
+            and(
+              ne(memos.id, memoId),
+              isNotNull(memos.imgs),
+              or(
+                ...pathnames.map(
+                  (k) =>
+                    // LIKE 通配符转义后按字面包含匹配（ilike 兼容大小写差异）
+                    ilike(memos.imgs, `%${escapeLike(k)}%`),
+                ),
+              ),
+            ),
+          )
+        for (const row of refRows) {
+          for (const k of pathnames) {
+            if (row.imgs && row.imgs.includes(k)) stillReferenced.add(k)
+          }
         }
-      }),
+      } catch (e) {
+        // 查询失败时宁可保守：跳过本次 Blob 清理（留下孤儿文件好过误删他人图片）
+        console.log('[memo/remove] blob reference check failed, skip cleanup:', e)
+        pathnames.length = 0
+      }
+    }
+
+    await Promise.all(
+      pathnames
+        .filter((pathname) => !stillReferenced.has(pathname))
+        .map(async (pathname) => {
+          try {
+            await del(pathname)
+          } catch (e) {
+            console.log('Blob delete error:', pathname, e)
+          }
+        }),
     )
   }
 

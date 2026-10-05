@@ -66,11 +66,11 @@ export default defineEventHandler(async (event) => {
     reToken,
   } = (await readBody(event)) as SaveCommentReq
 
-  // PG 不像 SQLite 那样宽松：integer 列与空串比较会直接报错
-  // （invalid input syntax for type integer）。客户端可能把“无回复”
-  // 序列化成 ""，统一在这里规范化成数字 0，对齐旧 SQLite 语义。
-  const memoIdNum = Number(memoId) || 0
-  const replyToIdNum = Number(replyToId) || 0
+  // PG 不像 SQLite 那样宽松：integer 列与非法值绑定直接报错。
+  // memoId 非法 → 视为 memo 不存在；replyToId 非法 → 视为无回复（0），
+  // 对齐旧 SQLite 语义且不把垃圾值带进 PG。
+  const memoIdNum = parseId(memoId) ?? 0
+  const replyToIdNum = parseId(replyToId) ?? 0
 
   // 评论区对匿名开放：每 IP 限流（10 次 / 分钟）
   await rateLimit(event, 'comment', 10, 60)
@@ -220,6 +220,25 @@ export default defineEventHandler(async (event) => {
   }
 
   const now = new Date().toISOString()
+
+  // 回复目标校验：必须在同一条 memo 下，且 replyToUser 存的是“被回复评论
+  // 作者的用户 id”（此前存的是 commentId，污染了 list 的头像 hydration）。
+  // 查不到/跨 memo 的回复目标直接拒绝，防止跨帖引用伪造回复链。
+  let replied: typeof comments.$inferSelect | null = null
+  if (replyToIdNum > 0) {
+    const commentRows = await db
+      .select()
+      .from(comments)
+      .where(eq(comments.id, replyToIdNum))
+      .limit(1)
+    const found = commentRows[0] ?? null
+    if (found && found.memoId === memoIdNum) {
+      replied = found
+    } else {
+      return { success: false, message: '回复的评论不存在' }
+    }
+  }
+
   await db.insert(comments).values({
     content,
     replyTo: replyTo ?? null,
@@ -229,9 +248,9 @@ export default defineEventHandler(async (event) => {
     website: website ?? null,
     author:
       ctxUserId !== undefined ? (ctxUserId === memo?.userId ? 1 : 2) : 0,
-    replyToUser: replyToIdNum,
+    replyToUser: replied?.linkedUser ?? 0,
     linkedUser: ctxUserId || 0,
-    replyToId: replyToIdNum,
+    replyToId: replied ? replyToIdNum : 0,
     createdAt: now,
     updatedAt: now,
   })
@@ -243,26 +262,19 @@ export default defineEventHandler(async (event) => {
     const notificationList: string[] = []
     notificationList.push(email || '')
 
-    if (replyToIdNum !== 0) {
-      const commentRows = await db
-        .select()
-        .from(comments)
-        .where(eq(comments.id, replyToIdNum))
-        .limit(1)
-      const replied = commentRows[0] ?? null
-      if (
-        replied &&
-        replied.email &&
-        replied.email !== '' &&
-        notificationList.indexOf(replied.email) === -1
-      ) {
+    if (
+      replied &&
+      replied.email &&
+      replied.email !== '' &&
+      notificationList.indexOf(replied.email) === -1
+    ) {
         notificationList.push(replied.email)
         await db.insert(notifications).values({
           type: 1,
           sendFrom: ctxUserId || 0,
           sendToUserId: replied.linkedUser || 0,
           sendToEmail: replied.email,
-          linkedMemo: memoId,
+          linkedMemo: memoIdNum,
           message: `用户 ${username} 回复了您，他回复道: ${content}`,
           time: now,
         })
@@ -299,7 +311,6 @@ export default defineEventHandler(async (event) => {
           })
         }
       }
-    }
 
     if (memo?.atpeople && memo.atpeople !== '') {
       const atpeople = memo.atpeople.split(',')
@@ -323,7 +334,7 @@ export default defineEventHandler(async (event) => {
             sendFrom: ctxUserId || 0,
             sendToUserId: targetId,
             sendToEmail: userat.eMail,
-            linkedMemo: memoId,
+            linkedMemo: memoIdNum,
             message: `用户 ${username} 在提及了您的动态中发表了评论，他说: ${content}`,
             time: now,
           })
@@ -380,7 +391,7 @@ export default defineEventHandler(async (event) => {
           sendFrom: ctxUserId || 0,
           sendToUserId: memo.userId,
           sendToEmail: owner.eMail,
-          linkedMemo: memoId,
+          linkedMemo: memoIdNum,
           message: `用户 ${username} 在您的moment中发表了评论: ${content}`,
           time: now,
         })

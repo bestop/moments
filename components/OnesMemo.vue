@@ -22,7 +22,7 @@
                style="object-fit: cover; object-position: center;" />
         </FancyBox>
       </div>
-      <div class="flex w-full" style="flex-direction: column;" @click="$router.push('/detail/'+props.memo.id)">
+      <div class="flex w-full" style="flex-direction: column;" @click="contentClick">
         <div class="words-container memo-content text-sm friend-md bg-[#f7f7f7] dark:bg-[#202020]" style="width:100%; padding: 10px" ref="el" v-if="!imgs.length" v-html="replaceNewLinesExceptInCodeBlocks(props.memo.content)"> </div>
         <div class="words-container memo-content text-sm friend-md" style="width:100%; padding: 10px" ref="el" v-if="imgs.length" v-html="replaceNewLinesExceptInCodeBlocks(props.memo.content)"> </div>
       </div>
@@ -32,7 +32,7 @@
 
 <script setup lang="ts">
 import type { Memo } from '@/lib/types';
-import { useElementSize, watchOnce } from '@vueuse/core';
+import { useElementSize } from '@vueuse/core';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
@@ -75,13 +75,23 @@ const props = withDefaults(
 const el = ref<any>(null)
 const { height } = useElementSize(el)
 
-watchOnce(height, () => {
+// 持续监听（旧 watchOnce 只测一次）：图片/字体晚到导致高度后变时，
+// 旧逻辑不会再收敛，该截的不截；这里高度变化后重新判断
+watch(height, () => {
+  if (!el.value) return
   if (height.value > 96) {
     el.value.classList.add('line-clamp-4')
     // 将内容截断为4行，后面的内容删除
     el.value.style.height = '93px'
   }
 })
+
+// 内容区点击：链接 target=_blank 新窗口打开，不重复跳 detail
+const contentClick = (e: MouseEvent) => {
+  const t = e.target as HTMLElement
+  if (t.tagName === 'A') return
+  navigateTo(`/detail/${props.memo.id}`)
+}
 
 const replaceNewLinesExceptInCodeBlocks = (text: any) => {
   // 长文章模式：有 markdown 标题就把连续空行折叠成单行

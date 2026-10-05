@@ -27,7 +27,9 @@ const TAG_ATTRS: Record<string, Set<string>> = {
 }
 
 function isSafeUrl(value: string): boolean {
-  const v = value.trim().toLowerCase()
+  // 剥除控制字符后再判前缀：浏览器解析 URL 时会丢弃 tab/换行等控制符，
+  // "java\tscript:" 这类混淆写法会被浏览器还原成 javascript: 执行
+  const v = value.replace(/[\x00-\x20]+/g, '').toLowerCase()
   if (v.startsWith('javascript:') || v.startsWith('vbscript:')) return false
   if (v.startsWith('data:')) return v.startsWith('data:image/')
   return true

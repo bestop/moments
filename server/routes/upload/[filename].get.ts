@@ -61,6 +61,8 @@ export default defineEventHandler(async (event) => {
     }
     if (result.blob.contentType) setHeader(event, 'Content-Type', result.blob.contentType)
     if (result.blob.size) setHeader(event, 'Content-Length', String(result.blob.size))
+    // 防止浏览器把响应嗅探成可执行类型（key 拼接/恶意上传场景的基础防线）
+    setHeader(event, 'X-Content-Type-Options', 'nosniff')
     // 浏览器侧 immutable 长缓存（重复访问零回源）；边缘侧限 1 天，避免
     // memo 删除后 Blob 对象已清而新访客仍从边缘缓存拿到已删内容。
     setHeader(
@@ -93,6 +95,7 @@ export default defineEventHandler(async (event) => {
   // key 是不可变 short-uuid：浏览器 immutable + 边缘 s-maxage（新访客每张图
   // 只回源一次函数调用；对象删除后边缘最多 1 天内可能仍 302 到已删对象，
   // 与私有流分支既有行为一致）
+  setHeader(event, 'X-Content-Type-Options', 'nosniff')
   setHeader(event, 'Cache-Control', 'public, max-age=31536000, immutable, s-maxage=86400')
   return sendRedirect(event, url, 302)
 })

@@ -10,19 +10,20 @@ export default defineEventHandler(async (event) => {
   // 翻译会触发对上游翻译服务的出站请求：每 IP 限流防滥用
   await rateLimit(event, 'translate', 20, 60)
   let { id } = (await readBody(event)) as DetailMemoReq
-  if (!id) {
+  // 非法 id（NaN/负数/超 int4 范围）直接拒绝，避免 PG 绑定报 500
+  const memoId = parseId(id)
+  if (memoId === null) {
     return {
       success: false,
       message: 'id 不能为空',
     }
   }
-  id = parseInt(id)
 
   const db = useDb(event)
   const memoRows = await db
     .select()
     .from(memos)
-    .where(eq(memos.id, id))
+    .where(eq(memos.id, memoId))
     .limit(1)
   const memo = memoRows[0] ?? null
 
@@ -50,15 +51,25 @@ export default defineEventHandler(async (event) => {
     .where(eq(comments.memoId, memo.id))
     .orderBy(asc(comments.createdAt))
 
+  // email 是 PII：对齐 comment/get 的策略，非 admin/本人一律剥除
+  const ctxUserId = event.context.userId as number | undefined
+  const safeComments = commentRows.map((c) => ({
+    ...c,
+    email:
+      ctxUserId === 1 || (ctxUserId !== undefined && c.linkedUser === ctxUserId)
+        ? c.email
+        : null,
+  }))
+
   const data: typeof memo & {
     user: typeof user
-    comments: typeof commentRows
+    comments: typeof safeComments
     _count: { comments: number }
   } = {
     ...memo,
     user,
-    comments: commentRows,
-    _count: { comments: commentRows.length },
+    comments: safeComments,
+    _count: { comments: safeComments.length },
   }
 
   if (data.availableForProple && data.availableForProple !== '') {

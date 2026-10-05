@@ -2,7 +2,7 @@
 
   <div class="memo flex flex-row gap-2 sm:gap-4 text-sm border-x-0 pt-2 p-2 sm:p-4" :class="{'bg-slate-100 dark:bg-neutral-900':props.memo.pinned && props.memo.userId == 1}" style="max-width: 100vw">
     <img :src="getImgUrl(props.memo.user.avatarUrl)" class="avatar w-9 h-9 rounded" @click="gotouser" />
-    <div class="flex flex-col gap-.5 flex-1 min-w-0">
+    <div class="flex flex-col gap-0.5 flex-1 min-w-0">
       <div class="flex flex-row justify-between items-center">
         <div class="username text-[#576b95] cursor-default mb-1 dark:text-white" @click="gotouser">{{ props.memo.user.nickname }}</div>
         <Pin :size=14 v-if="props.memo.pinned && props.memo.userId == 1" />
@@ -177,7 +177,7 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
 import { Heart, HeartCrack, MessageSquareMore, Trash2, FilePenLine, Pin, Info, Share, Languages } from 'lucide-vue-next'
 import { memoUpdateEvent, memoAddEvent, headigUpdateEvent, memoDeleteEvent} from '@/lib/event'
-import { getImgUrl } from '~/lib/utils';
+import { getImgUrl, parseMusicShareUrl } from '~/lib/utils';
 import LivePhoto from '~/components/LivePhoto.vue';
 
 // "still|video" 编码识别（详见 useUpload + uploadImgs Live Photo 配对逻辑）
@@ -258,28 +258,14 @@ const musicId = ref('')
 const musicPlatform = ref('netease')
 
 if(props.memo.music163Url){
-  if(props.memo.music163Url.includes("music.163.com")){
-    // 如果里面有playlist
-    if(props.memo.music163Url.includes("playlist")){
-      musicType.value = 'playlist'
-      musicId.value = props.memo.music163Url.split('playlist?id=')[1].split('&')[0]
-    }else if(props.memo.music163Url.includes("song")){
-      musicType.value = 'song'
-      musicId.value = props.memo.music163Url.split('song?id=')[1].split('&')[0]
-    }else if(props.memo.music163Url.includes("album")) {
-      musicType.value = 'album'
-      musicId.value = props.memo.music163Url.split('album?id=')[1].split('&')[0]
-    }
-  }else if(props.memo.music163Url.includes("y.qq.com")){
-    musicPlatform.value = 'tencent'
-    if(props.memo.music163Url.includes("songDetail")){
-      musicType.value = 'song'
-      musicId.value = props.memo.music163Url.split('songDetail/')[1].split('?')[0]
-    }else if(props.memo.music163Url.includes("playlist")){
-      musicType.value = 'playlist'
-      musicId.value = props.memo.music163Url.split('playlist/')[1].split('?')[0]
-    }
-  }else{
+  // 统一走共享解析器：原 split 链在 URL 命中关键词但无 id 参数时
+  // 会在 undefined 上调 split 直接崩（渲染期触发则整条 memo 崩溃）
+  const share = parseMusicShareUrl(props.memo.music163Url)
+  if (share) {
+    musicPlatform.value = share.platform
+    musicType.value = share.type
+    musicId.value = share.id
+  } else {
     props.memo.music163Url = ''
   }
 }
@@ -342,6 +328,9 @@ const el = ref<any>(null)
 // 内容是否超过 4 行被截断了；仅当 true 时才显示「全文 / 收起」
 const isOverflowing = ref(false)
 const likeList = useStorage<Array<number>>('likeList', [])
+const likePending = ref(false)
+const pinnedPending = ref(false)
+const removePending = ref(false)
 
 // 当 line-clamp-4 已通过 :class 绑定生效时，scrollHeight 是自然全高、
 // clientHeight 是被截断后的可视高度；差值就是是否溢出。
@@ -482,6 +471,12 @@ onMounted(async () => {
     userId = useCookie('userId')
   }
   el.value.addEventListener('click', (e: any) => {
+    // 正文里的链接 target=_blank 新窗口打开；不 stopPropagation 会
+    // 冒泡到卡片层的跳转逻辑，同时打开新标签又在当前页跳去 detail
+    if (e.target.tagName === 'A') {
+      e.stopPropagation()
+      return
+    }
     if (e.target.tagName === 'CODE') {
       navigator.clipboard.writeText(e.target.innerText).then(() => {
         toast.success('已复制到剪贴板')
@@ -542,56 +537,86 @@ const gridCols = computed(() => {
 
 const like = async () => {
   showToolbar.value = false
+  if (likePending.value) return
   const contain = likeList.value.find((id) => id === props.memo.id)
-  const res = await $fetch('/api/memo/like', {
-    method: 'POST',
-    body: JSON.stringify({
-      memoId: props.memo.id,
-      like: !contain
+  likePending.value = true
+  try {
+    const res: any = await $fetch('/api/memo/like', {
+      method: 'POST',
+      body: JSON.stringify({
+        memoId: props.memo.id,
+        like: !contain
+      })
     })
-  })
-  if (res.success) {
-    if (contain) {
-      likeList.value = likeList.value.filter((id) => id !== props.memo.id)
+    if (res.success) {
+      if (contain) {
+        likeList.value = likeList.value.filter((id) => id !== props.memo.id)
+      } else {
+        likeList.value.push(props.memo.id)
+      }
+      // 本地 patch：接口已返回最新 favCount，无需整表重拉
+      //（旧实现 emit → 父组件 firstLoad，重拉第一页并把滚动位置重置到顶部）
+      if (res.data && typeof res.data.favCount === 'number') {
+        props.memo.favCount = res.data.favCount
+      }
     } else {
-      likeList.value.push(props.memo.id)
+      toast.error(res.message || '操作失败')
     }
-    // 本地 patch：接口已返回最新 favCount，无需整表重拉
-    //（旧实现 emit → 父组件 firstLoad，重拉第一页并把滚动位置重置到顶部）
-    if (res.data && typeof res.data.favCount === 'number') {
-      props.memo.favCount = res.data.favCount
-    }
+  } catch (e: any) {
+    toast.error(e?.data?.message || e?.message || '网络异常，请稍后再试')
+  } finally {
+    // 在途锁：防止连点翻转两次
+    likePending.value = false
   }
 }
 
 const pinned = async ()=>{
   showToolbar.value = false
-  const res = await $fetch('/api/memo/pinned', {
-    method: 'POST',
-    body: JSON.stringify({
-      memoId: props.memo.id,
-      pinned:!(props.memo.pinned)
+  if (pinnedPending.value) return
+  pinnedPending.value = true
+  try {
+    const res: any = await $fetch('/api/memo/pinned', {
+      method: 'POST',
+      body: JSON.stringify({
+        memoId: props.memo.id,
+        pinned:!(props.memo.pinned)
+      })
     })
-  })
-  if (res.success) {
-    toast.success('操作成功')
-    emit('memo-update')
+    if (res.success) {
+      toast.success('操作成功')
+      emit('memo-update')
+    } else {
+      toast.error(res.message || '操作失败')
+    }
+  } catch (e: any) {
+    toast.error(e?.data?.message || e?.message || '网络异常，请稍后再试')
+  } finally {
+    pinnedPending.value = false
   }
 }
 
 const removeMemo = async () => {
   showToolbar.value = false
-  const res = await $fetch('/api/memo/remove', {
-    method: 'POST',
-    body: JSON.stringify({
-      memoId: props.memo.id
+  if (removePending.value) return
+  removePending.value = true
+  try {
+    const res: any = await $fetch('/api/memo/remove', {
+      method: 'POST',
+      body: JSON.stringify({
+        memoId: props.memo.id
+      })
     })
-  })
-  if (res.success) {
-    toast.success('删除成功')
-    emit('memo-update')
-    memoDeleteEvent.emit()
-    location.reload()
+    if (res.success) {
+      toast.success('删除成功')
+      location.reload()
+    } else {
+      // 删除失败必须告知，否则用户以为已删其实还在
+      toast.error(res.message || '删除失败，请稍后再试')
+    }
+  } catch (e: any) {
+    toast.error(e?.data?.message || e?.message || '删除失败：网络异常')
+  } finally {
+    removePending.value = false
   }
 }
 
@@ -613,67 +638,26 @@ memoAddEvent.on((id: any, body: any) => {
       fancyBoxKey.value++;
     }
     props.memo.music163Url = body.data.music163Url
-    if(props.memo.music163Url) {
-      if (props.memo.music163Url.includes("music.163.com")) {
-        // 如果里面有playlist
-        if (props.memo.music163Url.includes("playlist")) {
-          musicType.value = 'playlist'
-          musicId.value = props.memo.music163Url.split('playlist?id=')[1].split('&')[0]
-        } else if (props.memo.music163Url.includes("song")) {
-          musicType.value = 'song'
-          musicId.value = props.memo.music163Url.split('song?id=')[1].split('&')[0]
-        } else if (props.memo.music163Url.includes("album")) {
-          musicType.value = 'album'
-          musicId.value = props.memo.music163Url.split('album?id=')[1].split('&')[0]
-        }
-      }else if(props.memo.music163Url.includes("y.qq.com")){
-        musicPlatform.value = 'tencent'
-        if(props.memo.music163Url.includes("songDetail")){
-          musicType.value = 'song'
-          musicId.value = props.memo.music163Url.split('songDetail/')[1].split('?')[0]
-        }else if(props.memo.music163Url.includes("playlist")){
-          musicType.value = 'playlist'
-          musicId.value = props.memo.music163Url.split('playlist/')[1].split('?')[0]
-        }
-      } else {
-        props.memo.music163Url = ''
-      }
-    }
-    musicBoxKey.value++;
-  }
-  if(body.data.id <= 0){
-    emit('memo-update')
-    fancyBoxKey.value++;
-    // props.memo.music163Url = body.data.music163Url
-    if(props.memo.music163Url) {
-      if (props.memo.music163Url.includes("music.163.com")) {
-        // 如果里面有playlist
-        if (props.memo.music163Url.includes("playlist")) {
-          musicType.value = 'playlist'
-          musicId.value = props.memo.music163Url.split('playlist?id=')[1].split('&')[0]
-        } else if (props.memo.music163Url.includes("song")) {
-          musicType.value = 'song'
-          musicId.value = props.memo.music163Url.split('song?id=')[1].split('&')[0]
-        } else if (props.memo.music163Url.includes("album")) {
-          musicType.value = 'album'
-          musicId.value = props.memo.music163Url.split('album?id=')[1].split('&')[0]
-        }
-      } else if(props.memo.music163Url.includes("y.qq.com")){
-        musicPlatform.value = 'tencent'
-        if(props.memo.music163Url.includes("songDetail")){
-          musicType.value = 'song'
-          musicId.value = props.memo.music163Url.split('songDetail/')[1].split('?')[0]
-        }else if(props.memo.music163Url.includes("playlist")){
-          musicType.value = 'playlist'
-          musicId.value = props.memo.music163Url.split('playlist/')[1].split('?')[0]
-        }
-      }else {
-        props.memo.music163Url = ''
-      }
-    }else{
+    const share = parseMusicShareUrl(props.memo.music163Url || '')
+    if (share) {
+      musicPlatform.value = share.platform
+      musicType.value = share.type
+      musicId.value = share.id
+    } else {
       props.memo.music163Url = ''
     }
     musicBoxKey.value++;
+  } else if (body?.data?.id <= 0) {
+    // 新建 memo：各实例本地重解析自己的音乐块即可。
+    // 不再 emit('memo-update')：旧逻辑会让页面全部 memo 实例并发触发
+    // 父级 firstLoad（N 个重复列表请求）；新建路径 submitMemo 本就
+    // location.reload()，这里保留状态同步但不再引发请求风暴
+    const share = parseMusicShareUrl(props.memo.music163Url || '')
+    if (share) {
+      musicPlatform.value = share.platform
+      musicType.value = share.type
+      musicId.value = share.id
+    }
   }
 })
 
@@ -745,6 +729,11 @@ const replaceNewLinesExceptInCodeBlocks = (text: string) => {
       return '<blockquote>' + line.slice(2) + '</blockquote>';
     } else if (line.startsWith('![')) {
       const img = line.match(/!\[(.*?)\]\((.*?)\)/);
+      if (!img) {
+        // 以 "![" 开头但非合法图片语法的行按普通文本渲染：
+        // 未判空直接 img[2] 会抛 TypeError，一条内容就能崩掉整个渲染（含 SSR）
+        return '<span>' + line + '</span><br />';
+      }
       return `<img src="${img[2]}" alt="${img[1]}" class="cursor-pointer" @click="navigateTo('${img[2]}')"/>`;
     } else if (/^\d+\./.test(line)) {
       return '<p>' + line + '</p>';
@@ -778,26 +767,38 @@ const gotouser = () => {
 }
 
 const translated = ref(false)
+const translatePending = ref(false)
 var originalContent = props.memo.content
 
-const translateText = async () => {
+// 编辑/事件更新内容后同步还原基准，避免“还原原文”回退到旧快照
+watch(() => props.memo.content, (val) => {
+  if (!translated.value) originalContent = val
+})
 
-  if(translated.value){
+const translateText = async () => {
+  if (translatePending.value) return
+  if (translated.value) {
     props.memo.content = originalContent
     translated.value = false
-  }else{
-    const id = props.memo.id
-    await $fetch('/api/memo/translate', {
+    return
+  }
+  translatePending.value = true
+  try {
+    const res: any = await $fetch('/api/memo/translate', {
       method: 'POST',
-      body: JSON.stringify({
-        id: id
-      })
-    }).then(res => {
-      if(res.success){
-        props.memo.content = res.data.content
-      }
+      body: JSON.stringify({ id: props.memo.id }),
     })
-    translated.value = true
+    if (res.success && res.data?.content) {
+      props.memo.content = res.data.content
+      translated.value = true
+    } else {
+      // 失败不置 translated：工具条仍显示“翻译”，状态不错乱
+      toast.error(res.message || '翻译失败')
+    }
+  } catch (e: any) {
+    toast.error(e?.data?.message || e?.message || '翻译失败：网络异常')
+  } finally {
+    translatePending.value = false
   }
 }
 

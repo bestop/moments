@@ -93,7 +93,7 @@ const user = ref<HeaderUser>(
 
 async function fetchUserData(id: any) {
   const key = getCacheKey(id);
-  const response = await $fetch('/api/user/settings/get?user=' + key);
+  const response: any = await $fetch('/api/user/settings/get?user=' + key).catch(() => null)
   if (response && response.success) {
     const next: HeaderUser = {
       headImgKey: (user.value.headImgKey ?? 0) + 1,
@@ -127,7 +127,8 @@ onMounted(async () => {
     // refresh in background so updates eventually propagate
     fetchUserData(findId).catch(() => {});
   } else {
-    await fetchUserData(findId);
+    // 失败不能中断 onMounted，否则后面的天气加载也不执行
+    await fetchUserData(findId).catch(() => {});
   }
 
   if (showWeatherCache.value === null) {

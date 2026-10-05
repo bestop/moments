@@ -10,7 +10,10 @@ type ListUserReq = {
 
 export default defineEventHandler(async (event) => {
   const { find, withMe } = (await readBody(event)) as ListUserReq
-  const pattern = `%${find ?? ''}%`
+  // 通配符转义 + 限长：find 是用户可控输入，含 % _ 会改写匹配语义；
+  // 无 LIMIT 匿名可全量枚举用户昵称/头像
+  const findStr = String(find ?? '').slice(0, 50)
+  const pattern = `%${escapeLike(findStr)}%`
   const db = useDb(event)
 
   let rows: Array<{ id: number; nickname: string | null; avatarUrl: string | null }> = []
@@ -23,11 +26,13 @@ export default defineEventHandler(async (event) => {
       .select({ id: users.id, nickname: users.nickname, avatarUrl: users.avatarUrl })
       .from(users)
       .where(cond)
+      .limit(20)
   } else if (withMe === 1) {
     rows = await db
       .select({ id: users.id, nickname: users.nickname, avatarUrl: users.avatarUrl })
       .from(users)
       .where(ilike(users.nickname, pattern))
+      .limit(20)
   }
 
   return {

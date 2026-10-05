@@ -8,19 +8,20 @@ type DetailMemoReq = {
 
 export default defineEventHandler(async (event) => {
   let { id } = (await readBody(event)) as DetailMemoReq
-  if (!id) {
+  // 非法 id（NaN/负数/超 int4 范围）直接拒绝，避免 PG 绑定报 500
+  const memoId = parseId(id)
+  if (memoId === null) {
     return {
       success: false,
       message: 'id 不能为空',
     }
   }
-  id = parseInt(id)
 
   const db = useDb(event)
   const memoRows = await db
     .select()
     .from(memos)
-    .where(eq(memos.id, id))
+    .where(eq(memos.id, memoId))
     .limit(1)
   const memo = memoRows[0] ?? null
 
@@ -58,11 +59,22 @@ export default defineEventHandler(async (event) => {
     .where(eq(comments.memoId, memo.id))
     .orderBy(asc(comments.createdAt))
 
+  // email 是 PII：评论表对能看该 memo 的人整行返回，这里对齐 comment/get
+  // 的策略——只有 admin 或评论作者本人能拿到原始邮箱，其余剥除。
+  const ctxUserId = event.context.userId as number | undefined
+  const safeComments = commentRows.map((c) => ({
+    ...c,
+    email:
+      ctxUserId === 1 || (ctxUserId !== undefined && c.linkedUser === ctxUserId)
+        ? c.email
+        : null,
+  }))
+
   const data = {
     ...memo,
     user,
-    comments: commentRows,
-    _count: { comments: commentRows.length },
+    comments: safeComments,
+    _count: { comments: safeComments.length },
   }
 
   return {

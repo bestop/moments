@@ -77,8 +77,9 @@ export default defineEventHandler(async (event) => {
   const existingByUsername = await db
     .select()
     .from(users)
-    // SQLite 的 LIKE 对 ASCII 不分大小写，PG 换 ilike 保持同语义。
-    .where(ilike(users.username, '%' + username + '%'))
+    // SQLite 的 LIKE 对 ASCII 不分大小写，PG 换 ilike 保持同语义；
+    // 通配符转义：否则用户名含 % _ 时查重语义被改写（如 "100%" 能绕过子串判断）
+    .where(ilike(users.username, '%' + escapeLike(username) + '%'))
     .limit(1)
   if (existingByUsername[0]) {
     return { success: false, message: '用户名已经注册' }
@@ -86,17 +87,27 @@ export default defineEventHandler(async (event) => {
 
   const now = new Date().toISOString()
   const passwordHash = await hashPassword(password)
-  await db.insert(users).values({
-    username,
-    nickname: username,
-    eMail: email,
-    avatarUrl: '/avatar.webp',
-    coverUrl: '/cover.webp',
-    slogan: '这个人很懒，什么都没有留下',
-    password: passwordHash,
-    createdAt: now,
-    updatedAt: now,
-  })
+  try {
+    await db.insert(users).values({
+      username,
+      nickname: username,
+      eMail: email,
+      avatarUrl: '/avatar.webp',
+      coverUrl: '/cover.webp',
+      slogan: '这个人很懒，什么都没有留下',
+      password: passwordHash,
+      createdAt: now,
+      updatedAt: now,
+    })
+  } catch (e) {
+    // 并发同名/同邮箱注册会撞 unique 约束（前置查重拦不住竞态），
+    // 未捕获就是 500；转成友好提示即可
+    const msg = e instanceof Error ? e.message : String(e)
+    if (/unique|duplicate|already exists/i.test(msg)) {
+      return { success: false, message: '用户名或邮箱已被注册' }
+    }
+    throw e
+  }
 
   await kvDelete(codeKey)
 

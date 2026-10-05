@@ -54,6 +54,8 @@ export const useUpload = async (file: File, cb: UploadCallBack) => {
     /\.(mov|mp4|m4v)$/i.test(finalFile.name);
   if (!isImg && !isVideo) {
     toast.error('只支持上传图片或视频文件');
+    // 必须回调：调用方依赖 cb 结束在途状态/移除占位缩略图
+    cb({ success: false, message: '只支持上传图片或视频文件', filename: '' });
     return;
   }
 
@@ -64,9 +66,18 @@ export const useUpload = async (file: File, cb: UploadCallBack) => {
 
   const formData = new FormData();
   formData.append('file', finalFile);
-  const res = await $fetch('/api/files/upload', {
-    method: 'POST',
-    body: formData,
-  });
-  cb(res);
+  try {
+    const res = await $fetch('/api/files/upload', {
+      method: 'POST',
+      body: formData,
+    });
+    cb(res as any);
+  } catch (e: any) {
+    // 网络/401/500 等异常必须以失败回调收尾：此前直接 reject，
+    // MemoInput 的任务链在 await 处中断，占位缩略图永远移除不掉，
+    // 提交按钮因 pendingUploads 非空而永久禁用
+    const message = e?.data?.message || e?.message || '网络异常，请稍后再试';
+    toast.error('上传失败: ' + message, { duration: 8000 });
+    cb({ success: false, message, filename: '' });
+  }
 };

@@ -33,7 +33,7 @@
         <FriendsMemo
           :memo="memo"
           :show-more="true"
-          @memo-update="firstLoad"
+          @memo-update="refreshDebounced"
         />
       </div>
     </div>
@@ -160,7 +160,6 @@ onBeforeUnmount(() => {
 const firstLoad = async () => {
   state.page = 1;
   toast.promise($fetch('/api/memo/list', {
-    key: 'memoList',
     method: 'POST',
     body: JSON.stringify({ page: state.page })
   }), {
@@ -196,13 +195,20 @@ const firstLoad = async () => {
 
 let loadLock = false;
 
+// memo-update 去抖：评论/点赞/编辑等事件可能在一帧内触发多个实例的
+// emit，直接绑 firstLoad 会并发发出 N 个相同列表请求；合并为一次
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+const refreshDebounced = () => {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => firstLoad(), 150);
+};
+
 const loadMore = async () => {
   if(loadLock) return;
   loadLock = true;
 
   toast.promise(
       $fetch('/api/memo/list', {
-        key: 'memoList',
         method: 'POST',
         body: JSON.stringify({ page: state.page + 1 })
       }), {

@@ -156,7 +156,7 @@
         </div>
 
         <div class="flex flex-col gap-2 qus-box">
-          <Label for="email" class="font-bold">邮局服务器端口（已废弃）</Label>
+          <Label for="mailPort" class="font-bold">邮局服务器端口（已废弃）</Label>
           <Input type="number" id="mailPort" placeholder="旧版 SMTP 端口，可留空" autocomplete="off" v-model="state.mailPort" />
         </div>
 
@@ -172,7 +172,7 @@
 
         <div class="flex flex-col gap-2 qus-box">
           <Label for="mailPass" class="font-bold">邮局密码（已废弃）</Label>
-          <Input type="text" id="mailPass" placeholder="旧版 SMTP 密码，可留空" autocomplete="off" v-model="state.mailPass" />
+          <Input type="password" id="mailPass" placeholder="旧版 SMTP 密码，可留空" autocomplete="off" v-model="state.mailPass" />
         </div>
 
         <div class="flex flex-col gap-2 qus-box">
@@ -347,27 +347,23 @@
     </template>
 
     <div class="flex flex-col gap-2 qus-box ">
-      <Button @click="saveConfig">保存</Button>
+      <Button @click="saveConfig" :disabled="saving">{{ saving ? '保存中...' : '保存' }}</Button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { settingsUpdateEvent } from '~/lib/event'
 import { getImgUrl } from '~/lib/utils'
 const token = useCookie('token')
 import type { User } from '~/lib/types';
 import {toast} from "vue-sonner";
 import { Select } from '~/components/ui/select'
 
-const response = await $fetch('/api/user/settings/get?user=0');
+// 非管理员访问直接跳回首页：门控在路由中间件完成
+//（middleware/admin-only.ts），页面组件只服务已验证的管理员
 
-if(!response.success || !response.data.isadmin){
-  navigateTo('/')
-}
-
-useHead({
-  title: '设置-'+(response.data.title || 'Moments'),
+definePageMeta({
+  middleware: 'admin-only',
 })
 
 const state = reactive({
@@ -420,7 +416,13 @@ const state = reactive({
 })
 
 const { data: res } = await useFetch<{ data: typeof state }>('/api/site/config/get',{key:'site-config'})
-const data = res.value?.data
+// 统一兑底空对象：后续混用 data?.x 与裸 data.x，一旦请求失败裸访问直接崩整页
+const data: any = res.value?.data ?? {}
+
+useHead(() => ({
+  title: '设置-' + (state.title || 'Moments'),
+}))
+
 state.title = data?.title || 'Moments'
 state.favicon = data?.favicon || '/favicon.png'
 state.css = data?.css || ''
@@ -484,17 +486,29 @@ const uploadImgs = async (event: Event, id: string) => {
   })
 }
 
+const saving = ref(false)
 const saveConfig = async () => {
-  const { success } = await $fetch('/api/site/config/save', {
-    method: 'POST',
-    body: JSON.stringify(state)
-  })
-  if (success) {
-    toast.success('保存成功')
-    // SPA 级 site-settings 缓存失效，下次读取重新拉。reload 在此之后仍然冗余兜底。
-    useSiteSettings().invalidate()
-    location.reload()
-    settingsUpdateEvent.emit()
+  if (saving.value) return
+  saving.value = true
+  try {
+    const res: any = await $fetch('/api/site/config/save', {
+      method: 'POST',
+      body: JSON.stringify(state)
+    })
+    if (res.success) {
+      toast.success('保存成功')
+      // SPA 级 site-settings 缓存失效，reload 后全量重拉
+      useSiteSettings().invalidate()
+      location.reload()
+    } else {
+      toast.error('保存失败: ' + (res.message || '未知错误'), { duration: 8000 })
+    }
+  } catch (e: any) {
+    // 401（登录过期）/500（某字段校验不过）/断网都必须给出提示，
+    // 否则管理员以为保存成功
+    toast.error('保存失败: ' + (e?.data?.message || e?.message || '网络异常或登录已过期'), { duration: 8000 })
+  } finally {
+    saving.value = false
   }
 }
 </script>

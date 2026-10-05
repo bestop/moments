@@ -2,10 +2,10 @@
   <HeaderImg />
   <div>
     <div class="content flex flex-col gap-2">
-      <div v-if="state.memoList.length === 0 && !token" class="text-center">
+      <div v-if="state.memoList.length === 0" class="text-center">
         <div class="my-2 text-sm">什么也没有,赶紧去登录发表Moments吧!</div>
       </div>
-      <div v-for="(memo, index) in annotatedMemoList" :key="index">
+      <div v-for="memo in annotatedMemoList" :key="memo.id">
         <!-- 检查是否需要显示年份 -->
         <div v-if="memo.displayYear">
           <div style="margin: 0 20px">
@@ -19,7 +19,7 @@
     </div>
 
     <div id="get-more" ref="getMore" class="cursor-pointer text-center text-sm opacity-70 my-4" @click="loadMore()" v-if="state.hasNext" >
-      加载中...
+      {{ state.loadingMore ? '加载中...' : '加载更多' }}
     </div>
     <div class="cursor-pointer text-center text-sm opacity-70 my-4">
       ———— 没有更多啦～ ————
@@ -40,12 +40,14 @@ const token = useCookie('token')
 const route = useRoute()
 
 const userId = useCookie('userId');
-let findId = userId.value
+let findId: any = userId.value || route.params.id
 
 // SSR 化：第一页列表在服务端获取并随 HTML 返回（useFetch 自动转发 cookie，
 // 私密内容过滤与客户端一致）；翻页仍走客户端 loadMore 无限滚动。
+// key 绑定登录态：匿名/登录看到的可见范围不同，SPA 内不能复用旧 payload
+const loginState = useCookie('token')
 const { data: firstPage } = await useFetch('/api/memo/list', {
-  key: `user-memo-list:${route.params.id}:1`,
+  key: `user-memo-list:${route.params.id}:1:${loginState.value ? 'auth' : 'anon'}`,
   method: 'POST',
   body: { user: route.params.id, page: 1 },
 })
@@ -70,13 +72,20 @@ useSeoMeta({
   ogDescription: () => excerpt.value || undefined,
 })
 
-onMounted(async () => {
-  const url = window.location.pathname
-  if(url.startsWith('/user/')) {
-    findId = url.split('/user/')[1]
-  }
-  // 第一页已由 SSR 取回（见上方 useFetch），这里不再重复 firstLoad
-  const observer = new IntersectionObserver((entries) => {
+const getMore = ref(null);
+
+let observer: IntersectionObserver | null = null;
+
+// 生命周期钩子必须在 setup 顶层同步注册：放进 onMounted 的 await 之后
+// 会因无 active instance 而注册失败，observer 永不清理（每次进出页面泄漏一个）
+onUnmounted(() => {
+  observer?.disconnect()
+  observer = null
+})
+
+const setupObserver = () => {
+  observer?.disconnect()
+  observer = new IntersectionObserver((entries) => {
     if (entries[0].isIntersecting) {
       loadMore();
     }
@@ -88,32 +97,39 @@ onMounted(async () => {
   if (getMore.value) {
     observer.observe(getMore.value);
   }
+};
 
-  // 拿到个人css
-  const res = await $fetch('/api/user/settings/get?user=' + findId)
-  if (res.success && res.data && res.data.personalCss) {
-    const style = document.createElement('style');
-    style.innerHTML = res.data.personalCss;
-    document.head.appendChild(style);
-  }
-
-  // 当组件卸载时，停止观察
-  onUnmounted(() => {
-    if (getMore.value) {
-      observer.unobserve(getMore.value);
-    }
-  });
-  // 监听 getMore 引用的变化，并重新设置观察者
-  watch(getMore, () => {
-    setupObserver();
-  }, {
-    immediate: true // 立即触发，确保初始 setup
-  });
+// 监听 getMore 引用的变化，并重新设置观察者
+watch(getMore, () => {
+  setupObserver();
+}, {
+  immediate: true // 立即触发，确保初始 setup
 });
 
-const getMore = ref(null);
+// 被访用户的自定义 CSS：用 useHead 声明，组件卸载时自动移除。
+// 旧实现 document.head.appendChild 后永不清理——离开该用户页后其 CSS
+// 仍作用于全站（SPA 内直到手动刷新）
+const personalCss = ref('')
+useHead({
+  style: computed(() => (personalCss.value ? [{ innerHTML: personalCss.value }] : [])),
+})
 
-let observer: IntersectionObserver | null = null;
+onMounted(async () => {
+  const url = window.location.pathname
+  if(url.startsWith('/user/')) {
+    findId = url.split('/user/')[1]
+  }
+  // 第一页已由 SSR 取回（见上方 useFetch），这里不再重复 firstLoad
+  // 拿到个人css（失败不打断页面）
+  try {
+    const res: any = await $fetch('/api/user/settings/get?user=' + findId)
+    if (res?.success && res?.data?.personalCss) {
+      personalCss.value = res.data.personalCss
+    }
+  } catch (e) {
+    console.warn('[user] load personal css failed:', e)
+  }
+});
 
 const annotatedMemoList = computed(() => {
   if (!state.memoList.length) return [];
@@ -152,29 +168,6 @@ const annotatedMemoList = computed(() => {
 })
 
 
-const setupObserver = () => {
-  // 清除现有的观察者（如果有）
-  if (observer && getMore.value) {
-    observer.unobserve(getMore.value);
-  }
-
-  // 创建新的观察者实例
-  observer = new IntersectionObserver((entries) => {
-    if (entries[0].isIntersecting) {
-      loadMore();
-    }
-  }, {
-    // 上边框距离屏幕底部一定距离时触发
-    rootMargin: '500px',
-  });
-
-  // 设置新的观察目标
-  if (getMore.value) {
-    observer.observe(getMore.value);
-  }
-};
-
-
 const state = reactive({
   // 初值来自 SSR 拉取的第一页；水合时 useAsyncData payload 已就位，两端一致
   memoList: ((firstPage.value?.success && Array.isArray(firstPage.value.data))
@@ -182,12 +175,12 @@ const state = reactive({
     : []),
   page: 1,
   hasNext: firstPage.value?.hasNext || false,
+  loadingMore: false,
 })
 
 const firstLoad = async () => {
   state.page = 1
   toast.promise($fetch('/api/memo/list', {
-        key: 'memoList',
         method: 'POST',
         body: JSON.stringify({
           user: route.params.id,
@@ -224,10 +217,10 @@ let loadLock = false;
 const loadMore = async () => {
   if(loadLock) return;
   loadLock = true;
+  state.loadingMore = true
 
   toast.promise(
       $fetch('/api/memo/list', {
-        key: 'memoList',
         method: 'POST',
         body: JSON.stringify({
           user: route.params.id,
@@ -256,6 +249,7 @@ const loadMore = async () => {
         },
         finally() {
           loadLock = false; // 确保加载锁被重置
+          state.loadingMore = false
         },
       }
   );

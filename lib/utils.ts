@@ -34,6 +34,45 @@ export const plainExcerpt = (html: string | null | undefined, max = 110): string
     .trim()
     .slice(0, max);
 
+export type MusicShare = {
+  platform: 'netease' | 'tencent'
+  type: 'song' | 'playlist' | 'album'
+  id: string
+}
+
+/**
+ * 解析网易云音乐 / QQ 音乐分享链接为播放器参数，不可识别返回 null。
+ * 此前 4 处复制的 `split('playlist?id=')[1].split('&')[0]` 写法在 URL
+ * 命中关键词但不含 id 参数时（如 songlist?id=1）会在 undefined 上调
+ * split 直接抛 TypeError（渲染期触发则整条 memo 崩溃）。
+ */
+export const parseMusicShareUrl = (raw: string): MusicShare | null => {
+  const url = (raw || '').trim()
+  if (!url) return null
+  if (url.includes('music.163.com')) {
+    const m = /[?&]id=([0-9]+)/.exec(url)
+    if (!m) return null
+    // 与原实现同序：playlist → song → album
+    const type = url.includes('playlist')
+      ? 'playlist'
+      : url.includes('song')
+        ? 'song'
+        : url.includes('album')
+          ? 'album'
+          : null
+    if (!type) return null
+    return { platform: 'netease', type, id: m[1] }
+  }
+  if (url.includes('y.qq.com')) {
+    const song = /songDetail\/([^/?#&]+)/.exec(url)
+    if (song) return { platform: 'tencent', type: 'song', id: song[1] }
+    const pl = /playlist\/([^/?#&]+)/.exec(url)
+    if (pl) return { platform: 'tencent', type: 'playlist', id: pl[1] }
+    return null
+  }
+  return null
+}
+
 export const insertTextAtCursor = (text: string, textarea: HTMLTextAreaElement | undefined) => {
   if (!textarea) return; // 检查textarea是否存在
 

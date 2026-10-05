@@ -19,8 +19,11 @@ export default defineEventHandler(async (event) => {
   const paramUser = url.searchParams.get('user')
 
   let userId = 1
-  if (paramUser && /^\d+$/.test(paramUser)) {
-    userId = parseInt(paramUser, 10)
+  if (paramUser) {
+    // 非法/越界参数（含历史客户端传 'undefined'/'0'）一律回退 admin，
+    // 与旧版 /^\d+$/ 匹配失败时的行为保持一致
+    const parsed = parseId(paramUser)
+    userId = parsed ?? 1
   }
   if (!userId || userId < 1) {
     userId = event.context.userId ?? 1

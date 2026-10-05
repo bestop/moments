@@ -1,13 +1,13 @@
 <template>
   <HeaderImg />
-  <div class="p-2 sm:p-4 flex justify-center min-h-[500px w-full]">
+  <div class="p-2 sm:p-4 flex justify-center min-h-[500px] w-full">
     <div class="p-8 rounded shadow-md max-w-sm w-full">
       <div class="mb-4">
-        <Label for="username" class="block text-gray-700 mb-2">登陆名</Label>
+        <Label for="username" class="block text-neutral-800 dark:text-neutral-200 mb-2">登陆名</Label>
         <Input v-model="state.username" autocomplete="off" type="text" id="username" />
       </div>
       <div class="mb-4">
-        <Label for="email" class="block text-gray-700 mb-2">邮箱</Label>
+        <Label for="email" class="block text-neutral-800 dark:text-neutral-200 mb-2">邮箱</Label>
         <div class="flex flex-row gap-2">
           <Input v-model="state.email" autocomplete="email" type="email" id="email" />
           <Button @click="sendMail"
@@ -18,12 +18,12 @@
         </div>
       </div>
       <div class="mb-6" v-show="codeVisible">
-        <Label for="emailVerificationCode" class="block text-gray-700 mb-2">邮箱验证码</Label>
+        <Label for="emailVerificationCode" class="block text-neutral-800 dark:text-neutral-200 mb-2">邮箱验证码</Label>
         <Input v-model="state.emailVerificationCode" maxlength="6" autocomplete="one-time-code" type="text" id="emailVerificationCode" />
-        <p class="text-xs text-gray-500 mt-1">验证码发送至上方邮箱，5 分钟内有效；未收到请检查垃圾邮件。</p>
+        <p class="text-xs text-neutral-500 dark:text-neutral-400 mt-1">验证码发送至上方邮箱，5 分钟内有效；未收到请检查垃圾邮件。</p>
       </div>
       <div class="mb-6">
-        <Label for="password" class="block text-gray-700 mb-2">密码</Label>
+        <Label for="password" class="block text-neutral-800 dark:text-neutral-200 mb-2">密码</Label>
         <Input v-model="state.password" autocomplete="off" type="password" id="password" />
       </div>
       <div class="flex flex-row gap-2">

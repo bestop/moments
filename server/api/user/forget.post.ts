@@ -14,6 +14,9 @@ type registerReq = {
 }
 
 export default defineEventHandler(async (event) => {
+  // 密码重置是最高危写路径：除发送验证码时的 sendMail 限流外，
+  // 验证码校验本身也限流（纯数字码 10^6 空间，5 分钟内可爆破）
+  await rateLimit(event, 'forget', 10, 300)
   const { user, password, emailVerificationCode } =
     (await readBody(event)) as registerReq
 
@@ -29,8 +32,8 @@ export default defineEventHandler(async (event) => {
     return { success: false, message: '密码长度不能大于20位' }
   }
 
-  const userId = Number(user)
-  if (!Number.isFinite(userId) || userId <= 0) {
+  const userId = parseId(user)
+  if (userId === null) {
     return { success: false, message: '用户不存在或者邮箱未绑定' }
   }
 
@@ -49,7 +52,20 @@ export default defineEventHandler(async (event) => {
 
   const codeKey = 'resetPassword' + email
   const retrievedCode = await kvGet(codeKey)
-  if (retrievedCode === null || retrievedCode !== emailVerificationCode) {
+  if (retrievedCode === null) {
+    return { success: false, message: '验证码错误或过期' }
+  }
+  if (retrievedCode !== emailVerificationCode) {
+    // 失败计数：同邮箱 5 次失败即作废验证码，防止在 TTL 窗口内爆破
+    // （管理端可配置纯数字验证码，10^6 空间几分钟就能枚举完）
+    const failKey = 'resetPasswordFail:' + email
+    const fails = Number((await kvGet(failKey)) ?? '0') + 1
+    if (fails >= 5) {
+      await kvDelete(codeKey)
+      await kvDelete(failKey)
+    } else {
+      await kvPut(failKey, String(fails), 300)
+    }
     return { success: false, message: '验证码错误或过期' }
   }
 

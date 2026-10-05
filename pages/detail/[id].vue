@@ -17,8 +17,11 @@ const id = route.params.id as string
 // SSR 化：useFetch 在服务端执行并自动转发浏览器 cookie，私密内容的可见性
 // 判断与客户端完全一致；首屏 HTML 直接包含动态正文与作者信息，不再依赖
 // onMounted 后的客户端请求（SEO 抓取 + 首屏渲染双收益）。
+// key 绑定登录态：匿名时看到的（或被拒的）payload 在 SPA 内按 key 缓存，
+// 登录/登出后进同一页必须重新取，否则私密可见性全部过期
+const loginState = useCookie('token')
 const { data: res, refresh } = await useFetch('/api/memo/detail', {
-  key: `memo-detail:${id}`,
+  key: `memo-detail:${id}:${loginState.value ? 'auth' : 'anon'}`,
   method: 'POST',
   body: { id },
 })

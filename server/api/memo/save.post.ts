@@ -7,7 +7,7 @@
 // new row with the current user as owner.
 import { and, desc, eq } from 'drizzle-orm'
 import { aliTextJudge } from '~/utils/aliTextJudge'
-import { sendEmail } from '~/utils/sendEmail'
+import { escapeHtml, sendEmail } from '~/utils/sendEmail'
 import { useDb } from '~/lib/db'
 import { pushToUser } from '~/lib/push'
 import { config as configTable, memos, systemConfig, users } from '~/lib/db/schema'
@@ -54,8 +54,17 @@ export default defineEventHandler(async (event) => {
   try {
     const body = (await readBody(event)) as SaveMemoReq
 
+    // 登录后发 memo 无限流，会被脚本化刷帖烧光 Resend 配额（@ 提及每条
+    // 都发邮件）+ 骚扰站内用户。每 IP 10 条/分钟。
+    await rateLimit(event, 'memo', 10, 60)
+
     if (!body.content) {
       return { success: false, message: '内容不能为空' }
+    }
+    // 阿里云内容审查按 600 字符分块串行调用，超大内容会把请求拖死；
+    // 也顺带防止 MB 级 payload 刷库。正常动态远达不到这个量。
+    if (body.content.length > 20000) {
+      return { success: false, message: '内容长度不能超过 20000 个字符' }
     }
 
     stage = 'db-init'
@@ -129,11 +138,23 @@ export default defineEventHandler(async (event) => {
     // Defensive: only treat atpeople/avpeople as arrays if they really
     // are. Clients have shipped them as null, undefined, '', and even
     // bare numbers in the wild — `.filter` on a non-array would 500.
-    let atpeople = Array.isArray(body.atpeople) ? body.atpeople : undefined
+    //
+    // 元素必须规范为正整数：此前任意 JSON 值直接序列化成 `#<item>$` 存储，
+    // 含逗号/空串的元素会让 list 端的 split 解析崩溃（整站列表接口 500，
+    // 且已持久化、刷新即复现）。这里强制丢弃非法元素并去重。
+    const toIdList = (arr: unknown[]): number[] => {
+      const ids = new Set<number>()
+      for (const item of arr) {
+        const n = typeof item === 'number' ? item : Number(item)
+        if (Number.isInteger(n) && n > 0 && n <= 2147483647) ids.add(n)
+      }
+      return Array.from(ids)
+    }
+    let atpeople = Array.isArray(body.atpeople) ? toIdList(body.atpeople) : undefined
     if (atpeople) {
       atpeople = atpeople.filter((item) => item !== userId)
     }
-    let avpeople = Array.isArray(body.avpeople) ? body.avpeople : undefined
+    let avpeople = Array.isArray(body.avpeople) ? toIdList(body.avpeople) : undefined
     let avpeopleString: string[] = []
     if (avpeople && avpeople.length > 0) {
       if (!avpeople.includes(userId)) {
@@ -235,7 +256,7 @@ export default defineEventHandler(async (event) => {
             userat.eMail !== '' &&
             userat.eMail !== sender?.eMail
           ) {
-            let tmpmsg = `有一条新提及您的动态！\n                用户名为:  ${senderNickname} 的用户在动态中提及了您，点击查看: ${siteUrl}/detail/${resultId}`
+            let tmpmsg = `有一条新提及您的动态！\n                用户名为:  ${escapeHtml(senderNickname)} 的用户在动态中提及了您，点击查看: ${siteUrl}/detail/${resultId}`
             const templateRows = await db
               .select()
               .from(systemConfig)
@@ -245,14 +266,16 @@ export default defineEventHandler(async (event) => {
             if (template && template.value && template.value !== '') {
               tmpmsg = template.value
             }
-            tmpmsg = tmpmsg.replaceAll('{Sitename}', siteConfig?.title ?? '')
+            tmpmsg = tmpmsg.replaceAll('{Sitename}', escapeHtml(siteConfig?.title ?? ''))
             tmpmsg = tmpmsg.replaceAll('{SiteUrl}', siteUrl)
             tmpmsg = tmpmsg.replaceAll(
               '{MemoUrl}',
               `${siteUrl}/detail/${resultId}`,
             )
-            tmpmsg = tmpmsg.replaceAll('{Nickname}', senderNickname)
-            tmpmsg = tmpmsg.replaceAll('{Content}', body.content)
+            // 邮件以 html 发送：模板值必须转义，否则 memo 内容里的 HTML
+            // 会随“官方通知邮件”注入到被提及用户邮箱（钓鱼面）。对齐 comment/save。
+            tmpmsg = tmpmsg.replaceAll('{Nickname}', escapeHtml(senderNickname))
+            tmpmsg = tmpmsg.replaceAll('{Content}', escapeHtml(body.content))
             if (siteConfig?.enableEmail) {
               await sendEmail(event, {
                 email: userat.eMail,

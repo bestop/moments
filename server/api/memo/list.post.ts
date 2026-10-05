@@ -62,7 +62,13 @@ export default defineEventHandler(async (event) => {
 
   const size = 10
   const ctxUserId = event.context.userId
-  const needle = tagname ? '#' + tagname : (searchname ? searchname : '')
+  // LIKE 通配符转义 + 限长：搜索词含 % _ 会改写匹配语义（全表命中），
+  // 超长 needle 也会拖慢 ilike 全表扫描
+  const needle = tagname
+    ? '#' + escapeLike(String(tagname).slice(0, 100))
+    : searchname
+      ? escapeLike(String(searchname).slice(0, 100))
+      : ''
 
   // The availableForProple filter: row is visible iff
   //   availableForProple IS NULL OR availableForProple='' OR contains "#<viewer>$"
@@ -197,7 +203,10 @@ export default defineEventHandler(async (event) => {
     avpeople: (memo.availableForProple
       ? memo.availableForProple
           .split(',')
-          .map((item: string) => item.split('#')[1].split('$')[0])
+          // 防御性解析：历史数据可能存在不含 # $ 的段（旧版 save 未校验元素），
+          // 裸 split('#')[1] 会在 undefined 上抛 TypeError 打挂整个列表接口
+          .map((item: string) => /#(\d+)\$?/.exec(item)?.[1] ?? '')
+          .filter(Boolean)
       : []
     ).join(','),
   }))

@@ -87,8 +87,8 @@
       <div class="flex flex-row gap-2">
         <Button
             @click="submitMemo"
-            :disabled="((!content) && imgs.length === 0) || pendingUploads.length > 0"
-        >提交</Button>
+            :disabled="submitting || ((!content) && imgs.length === 0) || pendingUploads.length > 0"
+        >{{ submitting ? '提交中...' : '提交' }}</Button>
       </div>
     </div>
     <div class="relative">
@@ -131,6 +131,10 @@
           <div class="w-7 h-7 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
         </div>
         <span v-if="p.isLive" class="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded select-none pointer-events-none">LIVE</span>
+        <!-- 手动取消：上传卡住/失败时用户有自救手段，否则只能刷新页面 -->
+        <CircleX color="red" :size="15" class="absolute top-1 right-1 cursor-pointer bg-white/80 rounded-full"
+                 title="取消上传"
+                 @click="cancelPending(p.id)" />
       </div>
     </div>
 
@@ -208,9 +212,9 @@
                     <ComboboxAnchor class="min-w-[160px] inline-flex items-center justify-between rounded px-[15px] text-[13px] leading-none h-[35px] gap-[5px] text-grass11 shadow-[0_2px_10px] shadow-black/10 hover:bg-mauve3 focus:shadow-[0_0_0_2px] focus:shadow-black data-[placeholder]:text-grass9 outline-none">
                       <ComboboxInput
                           :modelValue="inputs0"
-                          @input="handleInputDebounced(0, inputs0)"
+                          @input="handleInputDebounced(0, $event)"
                           @compositionstart="composing=true"
-                          @compositionend="composing = false;handleInputDebounced(0, inputs0)"
+                          @compositionend="composing = false;handleInputDebounced(0, $event)"
                           @keydown.enter.prevent
                           class="!bg-transparent outline-none text-grass11 h-full selection:bg-grass5 placeholder-mauve8"
                           placeholder="请输入需要查询的用户"
@@ -284,9 +288,9 @@
                     <ComboboxAnchor class="min-w-[160px] inline-flex items-center justify-between rounded px-[15px] text-[13px] leading-none h-[35px] gap-[5px] text-grass11 shadow-[0_2px_10px] shadow-black/10 hover:bg-mauve3 focus:shadow-[0_0_0_2px] focus:shadow-black data-[placeholder]:text-grass9 outline-none">
                       <ComboboxInput
                           :modelValue="inputs1"
-                          @input="handleInputDebounced(1, inputs1)"
+                          @input="handleInputDebounced(1, $event)"
                           @compositionstart="composing = true"
-                          @compositionend="composing = false;handleInputDebounced(1, inputs1)"
+                          @compositionend="composing = false;handleInputDebounced(1, $event)"
                           @keydown.enter.prevent
                           class="!bg-transparent outline-none text-grass11 h-full selection:bg-grass5 placeholder-mauve8"
                           placeholder="请输入需要查询的用户"
@@ -333,7 +337,7 @@
 </template>
 
 <script setup lang="ts">
-import { getImgUrl, insertTextAtCursor } from '~/lib/utils';
+import { getImgUrl, insertTextAtCursor, parseMusicShareUrl } from '~/lib/utils';
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { memoUpdateEvent, memoAddEvent } from '@/lib/event'
@@ -361,7 +365,6 @@ import {
   ComboboxTrigger,
   ComboboxViewport
 } from "radix-vue";
-import { useState, useAsyncData } from '#imports';
 const locationInfo = ref('');
 const inputs0 = ref('');
 const inputs1 = ref('');
@@ -378,9 +381,9 @@ let composing = false;
 
 let debounceTimer: any = null;
 
-const handleInputDebounced = (withMe: number, inputs: string) => {
+const handleInputDebounced = (withMe: number, e: Event) => {
   clearTimeout(debounceTimer);
-  const value = event.target.value;
+  const value = (e.target as HTMLInputElement).value;
   debounceTimer = setTimeout(() => handleInput(withMe, value), 300); // 300ms为防抖时间，可以根据实际需求调整
 };
 
@@ -421,29 +424,13 @@ const musicId = ref('')
 const musicPlatform = ref('netease')
 
 const importMusic = () => {
-  if(music163Url.value.includes("music.163.com")){
-    // 如果里面有playlist
-    if(music163Url.value.includes("playlist")){
-      musicType.value = 'playlist'
-      musicId.value = music163Url.value.split('playlist?id=')[1].split('&')[0]
-    }else if(music163Url.value.includes("song")){
-      musicType.value = 'song'
-      musicId.value = music163Url.value.split('song?id=')[1].split('&')[0]
-    }else if(music163Url.value.includes("album")) {
-      musicType.value = 'album'
-      musicId.value = music163Url.value.split('album?id=')[1].split('&')[0]
-    }
-  }else if(music163Url.value.includes("y.qq.com")){
-    musicPlatform.value = 'tencent'
-    if(music163Url.value.includes("songDetail")){
-      musicType.value = 'song'
-      musicId.value = music163Url.value.split('songDetail/')[1].split('?')[0]
-    }else if(music163Url.value.includes("playlist")){
-      musicType.value = 'playlist'
-      musicId.value = music163Url.value.split('playlist/')[1].split('?')[0]
-    }
-  }else{
-    music163Url.value = ''
+  const share = parseMusicShareUrl(music163Url.value)
+  if (share) {
+    musicPlatform.value = share.platform
+    musicType.value = share.type
+    musicId.value = share.id
+  } else if (music163Url.value.trim()) {
+    toast.warning('暂不支持该链接，请粘贴网易云音乐或 QQ 音乐的分享链接')
   }
   music163Open.value = false
   musicBoxKey++
@@ -469,7 +456,9 @@ const fmtAite = computed(() => {
 
 const fmtAvailable = computed(() => {
   if(avpeopleNickname.value.length > 0) {
-    if(avpeople.value.length === 1 && avpeople.value[0] === userId.value) {
+    // cookie 值是字符串，avpeople 存的是 number：先转数字再比，否则
+    // “私密”徽标永远不显示
+    if(avpeople.value.length === 1 && avpeople.value[0] === Number(userId.value)) {
       return '私密'
     }
     return '仅: ' + avpeopleNickname.value.join('、') + '可见'
@@ -489,12 +478,7 @@ const externalFetchError = ref(false)
 const externalTitleEditing = ref(false)
 const music163Open = ref(false)
 
-let shouConfigButton = false
-let userId = ref(0)
-userId = useCookie('userId') || 0
-if (userId.value === 1) {
-  shouConfigButton = true
-}
+const userId = useCookie('userId')
 const clearExternalUrl = () => {
   externalUrl.value = ''
   externalTitle.value = ''
@@ -503,6 +487,7 @@ const clearExternalUrl = () => {
   externalFetchError.value = false
 }
 const addLink = async () => {
+  if (externalPending.value) return
   if (externalFetchError.value && externalTitle.value === '') {
     toast.warning('请填写标题和图标')
     return
@@ -516,21 +501,26 @@ const addLink = async () => {
   }
   externalPending.value = true
   externalFetchError.value = false
-  const { data: res } = await useAsyncData('external_' + externalUrl.value, async () => {
-    return await $fetch('/api/memo/readExternal', {
+  // 直接 $fetch + try/catch：useAsyncData 以 URL 作 key 会把失败/旧结果
+  // 缓存进 payload，站点修复后仍拿到旧缓存
+  try {
+    const res: any = await $fetch('/api/memo/readExternal', {
       method: 'POST',
-      body: JSON.stringify({ url: externalUrl.value })
+      body: JSON.stringify({ url: externalUrl.value }),
     })
-  })
-  if (res.value?.success) {
-    externalTitle.value = res.value?.title || '无法获取标题'
-    externalFavicon.value = res.value?.favicon || '/favicon.png'
-    linkOpen.value = false
-    externalPending.value = false
-  } else {
-    toast.warning('获取失败: ' + res.value?.message)
-    externalPending.value = false
+    if (res?.success) {
+      externalTitle.value = res.title || '无法获取标题'
+      externalFavicon.value = res.favicon || '/favicon.png'
+      linkOpen.value = false
+    } else {
+      toast.warning('获取失败: ' + (res?.message || '未知错误'))
+      externalFetchError.value = true
+    }
+  } catch (e: any) {
+    toast.warning('获取失败: ' + (e?.data?.message || e?.message || '网络异常'))
     externalFetchError.value = true
+  } finally {
+    externalPending.value = false
   }
 }
 
@@ -554,6 +544,7 @@ const drop = (event, dropIndex) => {
 
 
 const imgs = ref<string[]>([])
+const submitting = ref(false)
 
 // 上传进行中的占位项：用本地 blob URL 立刻显示缩略图，旁边一个旋转 spinner，
 // 上传完成后从这里删除、把真实 URL 推进 imgs。submit 时如果还有 pending 则提示。
@@ -564,6 +555,18 @@ type PendingItem = {
 }
 const pendingUploads = ref<PendingItem[]>([])
 let pendingIdSeq = 0
+const removePending = (pid: number) => {
+  const idx = pendingUploads.value.findIndex((p) => p.id === pid)
+  if (idx >= 0) {
+    URL.revokeObjectURL(pendingUploads.value[idx].blobUrl)
+    pendingUploads.value.splice(idx, 1)
+  }
+}
+// 用户手动取消上传中的占位图（上传失败/卡住时的自救手段）
+const cancelPending = (pid: number) => {
+  removePending(pid)
+  toast.info('已取消该图片上传')
+}
 const atpeople = ref<number[]>([])
 const atpeopleNickname = ref<string[]>([])
 
@@ -571,10 +574,12 @@ const avpeople = ref<number[]>([])
 const avpeopleNickname = ref<string[]>([])
 
 const submitMemo = async () => {
+  if (submitting.value) return
   if (content.value === '') {
     toast.warning('请输入内容')
     return
   }
+  submitting.value = true
   judgeAtSafty()
   const body = {
     id: id.value,
@@ -588,17 +593,15 @@ const submitMemo = async () => {
     externalUrl: externalUrl.value,
     music163Url: music163Url.value
   }
-  toast.promise($fetch('/api/memo/save', {
-        method: 'POST',
-        body: JSON.stringify(body)
-      }), {
+  // 单一请求实例：toast.promise 负责展示，finally 恢复提交按钮（成败都恢复）
+  const req = $fetch('/api/memo/save', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  toast.promise(req, {
         loading: '提交中...',
         success: (data) => {
           if (data.success) {
-          //   if(data.id>0){
-          //     location.reload();
-          //     return '提交成功';
-          //   }
             memoAddEvent.emit(data.id, {data:body,atpeopleNickname:atpeopleNickname.value,avpeopleNickname:avpeopleNickname.value})
             if(!body.id || body.id <= 0){
               location.reload();
@@ -625,7 +628,8 @@ const submitMemo = async () => {
         },
         error: (error) => `提交失败: ${error || '未知错误'}`,
       }
-  );
+  )
+  req.finally(() => { submitting.value = false }).catch(() => {})
 }
 
 const pasteImg = async (event: ClipboardEvent) => {
@@ -633,13 +637,8 @@ const pasteImg = async (event: ClipboardEvent) => {
   if (!items || items.length === 0) {
     return;
   }
-  await useUpload(items[0], async (res) => {
-    if (res.success) {
-      imgs.value = [...imgs.value, res.filename]
-    } else {
-      toast.warning('上传失败' + res.message)
-    }
-  })
+  // 粘贴也走同一管线：多文件不再丢弃、有占位预览、失败可取消/重试
+  await handleFiles(Array.from(items))
 }
 
 // Live Photo：iOS 把动态照片导出为同名的 <basename>.HEIC + <basename>.MOV 一对，
@@ -652,10 +651,8 @@ const baseName = (n: string) => n.replace(/\.[^.]+$/, '')
 const isImageFile = (f: File) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|heic|heif|tiff?)$/i.test(f.name)
 const isVideoFile = (f: File) => f.type.startsWith('video/') || /\.(mov|mp4|m4v)$/i.test(f.name)
 
-const uploadImgs = async (event: Event) => {
-  const inputEl = event.target as HTMLInputElement
-  const files = Array.from(inputEl.files || [])
-  if (files.length === 0) return
+const handleFiles = (files: File[]) => {
+  if (files.length === 0) return Promise.resolve()
 
   // 按基名分组找 Live Photo 配对（同基名 + 一个 image + 一个 video）
   const groups = new Map<string, { still?: File; video?: File; extras: File[] }>()
@@ -669,7 +666,9 @@ const uploadImgs = async (event: Event) => {
   }
 
   // 把所有 group 的占位条目先一次性塞进 pendingUploads（立刻有预览），
-  // 上传逻辑在后台并行跑，结果回来后从 pendingUploads 移除、推进 imgs
+  // 上传逻辑在后台并行跑，结果回来后从 pendingUploads 移除、推进 imgs。
+  // 每个任务 finally 里移除占位：任何异常（网络/401/取消）都不会把
+  // 占位项残留成“提交按钮永久禁用”。
   const tasks: Array<() => Promise<void>> = []
   for (const g of groups.values()) {
     if (g.still && g.video) {
@@ -682,12 +681,11 @@ const uploadImgs = async (event: Event) => {
       const still = g.still, video = g.video
       tasks.push(async () => {
         let stillUrl = '', videoUrl = ''
-        await useUpload(still, (res) => { if (res.success) stillUrl = res.filename; else toast.warning('上传失败' + res.message) })
-        await useUpload(video, (res) => { if (res.success) videoUrl = res.filename; else toast.warning('上传失败' + res.message) })
-        const idx = pendingUploads.value.findIndex(p => p.id === pid)
-        if (idx >= 0) {
-          URL.revokeObjectURL(pendingUploads.value[idx].blobUrl)
-          pendingUploads.value.splice(idx, 1)
+        try {
+          await useUpload(still, (res) => { if (res.success) stillUrl = res.filename; else toast.warning('上传失败' + res.message) })
+          await useUpload(video, (res) => { if (res.success) videoUrl = res.filename; else toast.warning('上传失败' + res.message) })
+        } finally {
+          removePending(pid)
         }
         if (stillUrl && videoUrl) {
           imgs.value = [...imgs.value, `${stillUrl}|${videoUrl}`]
@@ -705,20 +703,25 @@ const uploadImgs = async (event: Event) => {
       })
       tasks.push(async () => {
         let url = ''
-        await useUpload(f, (res) => { if (res.success) url = res.filename; else toast.warning('上传失败' + res.message) })
-        const idx = pendingUploads.value.findIndex(p => p.id === pid)
-        if (idx >= 0) {
-          URL.revokeObjectURL(pendingUploads.value[idx].blobUrl)
-          pendingUploads.value.splice(idx, 1)
+        try {
+          await useUpload(f, (res) => { if (res.success) url = res.filename; else toast.warning('上传失败' + res.message) })
+        } finally {
+          removePending(pid)
         }
         if (url) imgs.value = [...imgs.value, url]
       })
     }
   }
 
-  inputEl.value = ''
   // 全部 task 并行跑
-  await Promise.all(tasks.map(t => t()))
+  return Promise.all(tasks.map(t => t())).then(() => {})
+}
+
+const uploadImgs = async (event: Event) => {
+  const inputEl = event.target as HTMLInputElement
+  const files = Array.from(inputEl.files || [])
+  inputEl.value = ''
+  await handleFiles(files)
 }
 
 memoUpdateEvent.on((event: Memo) => {
@@ -754,29 +757,19 @@ memoUpdateEvent.on((event: Memo) => {
   externalTitle.value = event.externalTitle || ''
   externalUrl.value = event.externalUrl || ''
   music163Url.value = event.music163Url || ''
-  if(music163Url.value.includes("music.163.com")){
-    // 如果里面有playlist
-    if(music163Url.value.includes("playlist")){
-      musicType.value = 'playlist'
-      musicId.value = music163Url.value.split('playlist?id=')[1].split('&')[0]
-    }else if(music163Url.value.includes("song")){
-      musicType.value = 'song'
-      musicId.value = music163Url.value.split('song?id=')[1].split('&')[0]
-    }else if(music163Url.value.includes("album")) {
-      musicType.value = 'album'
-      musicId.value = music163Url.value.split('album?id=')[1].split('&')[0]
+  {
+    // 统一走共享解析器：原 split 链在 URL 命中关键词但无 id 参数时
+    // 会在 undefined 上调用 split，编辑/回填场景直接崩
+    const share = parseMusicShareUrl(music163Url.value)
+    if (share) {
+      musicPlatform.value = share.platform
+      musicType.value = share.type
+      musicId.value = share.id
+    } else if (music163Url.value) {
+      music163Url.value = ''
+      musicType.value = ''
+      musicId.value = ''
     }
-  }else if(music163Url.value.includes("y.qq.com")){
-    musicPlatform.value = 'tencent'
-    if(music163Url.value.includes("songDetail")){
-      musicType.value = 'song'
-      musicId.value = music163Url.value.split('songDetail/')[1].split('?')[0]
-    }else if(music163Url.value.includes("playlist")){
-      musicType.value = 'playlist'
-      musicId.value = music163Url.value.split('playlist/')[1].split('?')[0]
-    }
-  }else{
-    music163Url.value = ''
   }
   music163Open.value = false
   musicBoxKey++
@@ -790,72 +783,60 @@ onMounted(async () => {
   }
 })
 
-const getTmpLocation = async () => {
-  return new Promise(async (resolve, reject) => {
-    try {
-      let tencentMapKey: string = '';
-      const siteConfig = await $fetch('/api/site/config/get')
-      if (siteConfig && siteConfig.success && siteConfig.data && siteConfig.data.enableTencentMap) {
-        tencentMapKey = siteConfig.data.tencentMapKey?.trim() || '';
-      } else {
-        reject('当前站点未开启地图服务，请手动输入位置或者联系管理员开启地图服务');
-      }
-      const url = 'https://apis.map.qq.com/ws/location/v1/ip';
-      const params = {
-        key: tencentMapKey,
-        output: 'jsonp'
-      };
-      const queryString = new URLSearchParams(params).toString();
-      const jsonpUrl = `${url}?${queryString}`;
-      const { default: jsonp } = await import('jsonp');
-      jsonp(jsonpUrl, null, (err: any, data: any) => {
-        if (err) {
-          return '获取位置失败';
-        } else {
-          const ipLocation = data;
-          if (ipLocation.status === 0) {
-            let pos = ipLocation.result.ad_info.nation;
-            if (ipLocation.result.ad_info.province !== undefined && ipLocation.result.ad_info.province !== '') {
-              pos += '-' + ipLocation.result.ad_info.province;
-            }
-            if (ipLocation.result.ad_info.city !== undefined && ipLocation.result.ad_info.city !== '' && ipLocation.result.ad_info.city !== ipLocation.result.ad_info.province) {
-              pos += '-' + ipLocation.result.ad_info.city;
-            }
-            if (ipLocation.result.ad_info.district !== undefined && ipLocation.result.ad_info.district !== '') {
-              pos += '-' + ipLocation.result.ad_info.district;
-            }
-            if (ipLocation.result.address_reference !== undefined && ipLocation.result.address_reference !== '') {
-              if (ipLocation.result.address_reference.famous_area !== undefined && ipLocation.result.address_reference.famous_area !== '') {
-                pos += ' ' + ipLocation.result.address_reference.famous_area.title;
-              } else if (ipLocation.result.address_reference.business_area !== undefined && ipLocation.result.address_reference.business_area !== '') {
-                pos += ' ' + ipLocation.result.address_reference.town.title;
-              } else if (ipLocation.result.address_reference.town !== undefined && ipLocation.result.address_reference.town !== '') {
-                pos += ' ' + ipLocation.result.address_reference.town.title;
-              } else if (ipLocation.result.address_reference.landmark_l1 !== undefined && ipLocation.result.address_reference.landmark_l1 !== '') {
-                pos += ' ' + ipLocation.result.address_reference.town.title;
-              } else if (ipLocation.result.address_reference.landmark_l2 !== undefined && ipLocation.result.address_reference.landmark_l2 !== '') {
-                pos += ' ' + ipLocation.result.address_reference.town.title;
-              } else if (ipLocation.result.address_reference.street !== undefined && ipLocation.result.address_reference.street !== '') {
-                pos += ' ' + ipLocation.result.address_reference.town.title;
-              } else if (ipLocation.result.address_reference.street_number !== undefined && ipLocation.result.address_reference.street_number !== '') {
-                pos += ' ' + ipLocation.result.address_reference.town.title;
-              } else if (ipLocation.result.address_reference.crossroad !== undefined && ipLocation.result.address_reference.crossroad !== '') {
-                pos += ' ' + ipLocation.result.address_reference.town.title;
-              } else if (ipLocation.result.address_reference.water !== undefined && ipLocation.result.address_reference.water !== '') {
-                pos += ' ' + ipLocation.result.address_reference.town.title;
-              } else if (ipLocation.result.address_reference.ocean !== undefined && ipLocation.result.address_reference.ocean !== '') {
-                pos += ' ' + ipLocation.result.address_reference.town.title;
-              }
-            }
-            resolve(pos);
-          }
-        }
-        reject('获取位置失败');
-      });
-    } catch (error) {
-      console.error(error);
+const getTmpLocation = async (): Promise<string> => {
+  let tencentMapKey = ''
+  try {
+    const siteConfig: any = await $fetch('/api/site/config/get')
+    if (siteConfig?.success && siteConfig?.data?.enableTencentMap) {
+      tencentMapKey = siteConfig.data.tencentMapKey?.trim() || ''
     }
-  });
+  } catch (e) {
+    console.warn('[location] load site config failed:', e)
+  }
+  if (!tencentMapKey) {
+    // 用 throw 而不是 reject 后继续执行：旧代码 reject 后没 return，
+    // 仍会带着空 key 去请求腾讯接口
+    throw '当前站点未开启地图服务，请手动输入位置或者联系管理员开启地图服务'
+  }
+
+  const params = { key: tencentMapKey, output: 'jsonp' }
+  const jsonpUrl = `https://apis.map.qq.com/ws/location/v1/ip?${new URLSearchParams(params).toString()}`
+  const { default: jsonp } = await import('jsonp')
+  return new Promise<string>((resolve, reject) => {
+    jsonp(jsonpUrl, null, (err: any, data: any) => {
+      if (err) {
+        // 必须 reject：旧代码 return 字符串既不 resolve 也不 reject，
+        // toast.promise 会永远停在“获取位置中...”
+        reject('获取位置失败，请手动输入位置')
+        return
+      }
+      const result = data?.result
+      const ad = result?.ad_info ?? {}
+      const ref = result?.address_reference ?? {}
+      if (data?.status !== 0 || !ad.nation) {
+        reject('获取位置失败，请手动输入位置')
+        return
+      }
+      let pos = ad.nation
+      if (ad.province && ad.province !== '') pos += '-' + ad.province
+      if (ad.city && ad.city !== '' && ad.city !== ad.province) pos += '-' + ad.city
+      if (ad.district && ad.district !== '') pos += '-' + ad.district
+      // 各参考点取自己的 title：旧代码 8 个分支全部 copy-paste 成 town.title，
+      // 会出现“深圳-深圳”这类重复/错误位置；按优先级取第一个存在的
+      const refOrder = [
+        'famous_area', 'business_area', 'town', 'landmark_l1', 'landmark_l2',
+        'street', 'street_number', 'crossroad', 'water', 'ocean',
+      ]
+      for (const key of refOrder) {
+        const item = ref[key]
+        if (item && item.title) {
+          pos += ' ' + item.title
+          break
+        }
+      }
+      resolve(pos)
+    })
+  })
 }
 
 async function updateLocation() {

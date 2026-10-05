@@ -1,6 +1,5 @@
 // 浏览器拿到 PushSubscription 后 POST 这里：endpoint + keys.p256dh + keys.auth
 // 必须登录（auth 中间件已在 needLoginUrl）
-import { eq } from 'drizzle-orm'
 import { useDb } from '~/lib/db'
 import { pushSubscriptions } from '~/lib/db/schema'
 
@@ -40,26 +39,21 @@ export default defineEventHandler(async (event) => {
   }
 
   const db = useDb(event)
-  const now = new Date().toISOString()
-  // upsert：同一 endpoint 已存在就更新 userId（用户换账号登录）
-  const existing = await db
-    .select({ id: pushSubscriptions.id })
-    .from(pushSubscriptions)
-    .where(eq(pushSubscriptions.endpoint, body.endpoint))
-    .limit(1)
-  if (existing.length > 0) {
-    await db
-      .update(pushSubscriptions)
-      .set({ userId, p256dh: body.keys.p256dh, auth: body.keys.auth })
-      .where(eq(pushSubscriptions.endpoint, body.endpoint))
-  } else {
-    await db.insert(pushSubscriptions).values({
+  // upsert：同一 endpoint 已存在就更新 userId（用户换账号登录）。
+  // 用原生 onConflictDoUpdate 消除 select-then-insert 竞态——并发订阅同一
+  // endpoint 时旧写法会撞 unique 约束抛未捕获 500。
+  await db
+    .insert(pushSubscriptions)
+    .values({
       userId,
       endpoint: body.endpoint,
       p256dh: body.keys.p256dh,
       auth: body.keys.auth,
-      createdAt: now,
+      createdAt: new Date().toISOString(),
     })
-  }
+    .onConflictDoUpdate({
+      target: pushSubscriptions.endpoint,
+      set: { userId, p256dh: body.keys.p256dh, auth: body.keys.auth },
+    })
   return { success: true }
 })

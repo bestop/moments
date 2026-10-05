@@ -8,8 +8,8 @@ type GetCommentReq = {
 
 export default defineEventHandler(async (event) => {
   const { memoId } = (await readBody(event)) as GetCommentReq
-  // PG 严格类型：integer 列不接受空串比较，统一规范化（对齐 SQLite 语义）
-  const memoIdNum = Number(memoId) || 0
+  // PG 严格类型：非法 id（NaN/超 int4 范围）绑定会直接 500，统一规范化拒绝
+  const memoIdNum = parseId(memoId) ?? 0
   const db = useDb(event)
 
   // 可见性闸门：与 memo detail/translate 保持一致 —— 私密 memo 的评论
