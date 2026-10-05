@@ -7,8 +7,20 @@ export default defineNuxtConfig({
   modules: [
     "@nuxtjs/tailwindcss",
     "shadcn-nuxt",
+    // 排在 shadcn-nuxt 之后：移除其 unshift 进来的 components/ui 冗余扫描项
+    "~/modules/shadcn-dirs-cleanup",
     "@nuxtjs/color-mode",
     "@vite-pwa/nuxt",
+  ],
+  components: [
+    {
+      path: "~/components",
+      // ui/（shadcn-vue）不进默认扫描：shadcn-nuxt 已按各 index.ts 具名导出
+      // 注册裸名组件（Button、AlertDialogContent…），默认扫描再把同目录的
+      // index.ts 与 X.vue 各注册一遍，产生 11 个 "Two component files
+      // resolving to the same name" 警告。模板不使用 Ui* 前缀名，排除无副作用。
+      ignore: ["ui/**"],
+    },
   ],
   pwa: {
     registerType: "autoUpdate",

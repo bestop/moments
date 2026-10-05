@@ -8,11 +8,12 @@ export type UploadCallBack = (res: {
 
 // 仅 iOS 设备拍摄/相册原图常见为 HEIC/HEIF；其他浏览器不能原生显示。
 // 浏览器端用 heic-to（libheif-js 的轻包装）转成 JPEG 再上传，服务端就不用
-// 处理任何原生 codec（Workers 跑不了 sharp/libheif）。
+// 处理任何原生 codec（Serverless 跑不了 sharp/libheif）。
 // heic-to 是浏览器专属库，用动态 import 避免被打进 SSR bundle。
 async function maybeConvertHeic(file: File): Promise<File> {
   // SSR 构建时 import.meta.server 被静态替换为 true，整段被 tree-shake 掉，
-  // heic-to + libheif WASM 不会被打进 _worker.js（Cloudflare Workers 1MB 脚本限制）
+  // heic-to + libheif WASM 不会被打进服务端 bundle；客户端侧由
+  // manualChunks 独立成 heic-converter chunk，仅在真正遇到 HEIC 时按需加载
   if (import.meta.server) return file;
 
   const looksHeic =
