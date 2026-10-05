@@ -44,6 +44,44 @@ function tooMany(): never {
   throw createError({ statusCode: 429, statusMessage: '请求太频繁，请稍后再试' })
 }
 
+/** Upstash REST 单命令调用（兼容所有 Redis 版本，不依赖 pipeline / EXPIRE NX）。 */
+async function redisIncr(cfg: { url: string; token: string }, key: string): Promise<number> {
+  const res = await fetch(cfg.url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${cfg.token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(['INCR', key]),
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(`upstream ${res.status}: ${detail.slice(0, 120)}`)
+  }
+  const payload = (await res.json()) as { result?: unknown; error?: unknown }
+  if (payload?.error) throw new Error(`incr: ${JSON.stringify(payload.error).slice(0, 120)}`)
+  return Number(payload?.result ?? 0)
+}
+
+async function redisExpireIfNeeded(
+  cfg: { url: string; token: string },
+  key: string,
+  windowSeconds: number,
+): Promise<void> {
+  const res = await fetch(cfg.url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${cfg.token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(['EXPIRE', key, windowSeconds]),
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(`expire upstream ${res.status}: ${detail.slice(0, 120)}`)
+  }
+}
+
 /**
  * 固定窗口限流。超过 limit 抛 429。
  * @param name  桶名（自动附加客户端 IP）
@@ -62,20 +100,12 @@ export async function rateLimit(
   if (cfg) {
     try {
       const key = PREFIX + bucket
-      const res = await fetch(cfg.url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${cfg.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify([['INCR', key], ['EXPIRE', key, windowSeconds, 'NX']]),
-      })
-      if (!res.ok) throw new Error(`upstream ${res.status}`)
-      const payload = (await res.json()) as Array<{ result?: unknown; error?: unknown }>
-      // Upstash pipeline：单命令响应 {result,error} 的数组；INCR 计数超限即拦截
-      const first = payload?.[0]
-      if (first && first.error) throw new Error(`incr: ${JSON.stringify(first.error).slice(0, 120)}`)
-      const incr = Number(first?.result ?? 0)
+      const incr = await redisIncr(cfg, key)
+      // 首次计数时补 TTL（经典 INCR+EXPIRE 模式；极端情况下实例在两步间
+      // 重启会让 key 少了 TTL，多一条孤儿 key，可接受）
+      if (incr === 1) {
+        await redisExpireIfNeeded(cfg, key, windowSeconds)
+      }
       health.backend = 'redis'
       health.lastError = null
       if (incr > limit) tooMany()
